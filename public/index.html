@@ -1,0 +1,359 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>jace 开源小说生成器</title>
+<style>
+  :root{
+    --bg:#f4f6f5; --surface:#fff; --ink:#1a1f1d; --muted:#5f6b64; --line:#e2e7e4;
+    --acc:#0e9e8e; --acc-d:#0b7d70; --warn:#c26a2b; --serif:"Songti SC","Noto Serif CJK SC",Georgia,serif;
+    --sans:"PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:var(--sans);background:var(--bg);color:var(--ink)}
+  header{padding:14px 22px;border-bottom:1px solid var(--line);background:var(--surface);display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:5}
+  header .logo{font-weight:800;color:var(--acc);letter-spacing:.5px}
+  header .sub{color:var(--muted);font-size:13px}
+  main{max-width:900px;margin:0 auto;padding:26px 20px 80px}
+  h1{font-family:var(--serif);font-weight:700}
+  .cards{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:20px}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:28px;cursor:pointer;transition:.15s}
+  .card:hover{border-color:var(--acc);transform:translateY(-2px);box-shadow:0 8px 24px rgba(14,158,142,.1)}
+  .card h3{margin:.2em 0;font-size:20px}
+  .card p{color:var(--muted);font-size:13px;margin:0}
+  .card .ic{font-size:30px}
+  button{font-family:var(--sans);cursor:pointer;border-radius:10px;border:1px solid var(--line);background:var(--surface);color:var(--ink);padding:9px 16px;font-size:14px}
+  button:hover{border-color:var(--acc)}
+  button.primary{background:var(--acc);color:#fff;border-color:var(--acc);font-weight:700}
+  button.primary:hover{background:var(--acc-d)}
+  button.danger{color:#c0392b;border-color:#e7c3bd}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  input,select,textarea{font-family:var(--sans);width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:9px;font-size:14px;background:#fff;color:var(--ink)}
+  textarea{resize:vertical;min-height:90px;line-height:1.6}
+  label{display:block;font-size:13px;color:var(--muted);margin:12px 0 5px}
+  .row{display:flex;gap:12px}.row>div{flex:1}
+  .scrim{position:fixed;inset:0;background:#0007;display:none;align-items:center;justify-content:center;z-index:20;padding:20px}
+  .scrim.on{display:flex}
+  .modal{background:var(--surface);border-radius:16px;max-width:640px;width:100%;max-height:88vh;overflow:auto;padding:24px}
+  .modal h2{margin:0 0 6px;font-family:var(--serif)}
+  .foundation section{border:1px solid var(--line);border-radius:12px;margin:12px 0;overflow:hidden}
+  .foundation section>h4{margin:0;padding:10px 14px;background:#eef2f0;font-size:14px;color:var(--acc-d)}
+  .foundation pre{margin:0;padding:12px 14px;white-space:pre-wrap;font-family:var(--serif);font-size:14px;line-height:1.75;max-height:280px;overflow:auto}
+  .reader{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:26px 30px;margin-top:16px;min-height:200px}
+  .reader h2{font-family:var(--serif);font-size:22px;text-align:center;margin:0 0 20px}
+  .reader .body{font-family:var(--serif);font-size:16.5px;line-height:2;white-space:pre-wrap;text-align:justify}
+  .toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:14px}
+  .stage{font-size:12px;color:var(--muted);font-family:ui-monospace,monospace}
+  .tabs{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0}
+  .tab{padding:8px 14px;border-radius:999px;border:1px solid var(--line);background:#fff;font-size:13px;cursor:pointer}
+  .tab.sel{background:var(--acc);color:#fff;border-color:var(--acc)}
+  .chapters{margin-top:10px}
+  .chapters .chap{border:1px solid var(--line);border-radius:10px;padding:12px 16px;margin:8px 0;background:var(--surface)}
+  .chapters .chap h3{margin:0 0 6px;font-family:var(--serif);font-size:16px}
+  .chapters .chap .body{font-family:var(--serif);font-size:15px;line-height:1.9;white-space:pre-wrap;max-height:200px;overflow:auto;color:#333}
+  .hidden{display:none}
+  .hint{font-size:12px;color:var(--warn);margin-top:6px}
+  main{max-width:1200px}
+  .ws-grid{display:grid;grid-template-columns:1fr 340px;gap:18px;align-items:start}
+  @media(max-width:860px){.ws-grid{grid-template-columns:1fr}}
+  .ws-right{position:sticky;top:70px;max-height:calc(100vh-90px);overflow:auto}
+  .cardbox{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:12px}
+  .cardbox h4{margin:0 0 8px;font-size:13px;color:var(--acc-d)}
+  .cardbox pre{margin:0;white-space:pre-wrap;font-family:var(--serif);font-size:12.5px;line-height:1.7;max-height:220px;overflow:auto;color:#333}
+  .cardbox details{border-top:1px solid var(--line);padding:6px 0}
+  .cardbox details summary{cursor:pointer;font-size:13px;font-family:var(--serif)}
+  .cardbox .rtier{font-size:10px;background:#eef2f0;color:var(--acc-d);border-radius:6px;padding:1px 6px;margin-left:6px}
+  .cardbox details pre{max-height:180px;margin-top:6px}
+  .logrow{border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:8px 0}
+  .logmeta{font-size:12px;color:var(--muted);margin-bottom:4px}
+  .logrow pre{margin:0;white-space:pre-wrap;font-family:var(--serif);font-size:13px;line-height:1.7}
+  #ch-body p{margin:0 0 1em;text-indent:2em}
+  .badge{display:inline-block;font-size:11px;padding:2px 8px;border-radius:999px;background:#eef2f0;color:var(--acc-d);margin-left:8px}
+  /* Markdown 渲染（卡片/大纲/正文通用） */
+  .mdbox{font-family:var(--serif);font-size:13px;line-height:1.75;color:#333;max-height:260px;overflow:auto}
+  .foundation .mdbox{max-height:300px;font-size:14px}
+  .reader .body .mdbox{max-height:none;font-size:16.5px;line-height:2}
+  .mdbox h3.md,.mdbox h4.md,.mdbox h5.md,.mdbox h6.md{margin:.7em 0 .3em;font-family:var(--sans);color:var(--acc-d);font-size:1.02em}
+  .mdbox p{margin:0 0 .7em}
+  .mdbox ul.md,.mdbox ol.md{margin:.3em 0 .7em;padding-left:1.4em}
+  .mdbox li{margin:.15em 0}
+  .mdbox blockquote.md{margin:.4em 0;padding:.2em .8em;border-left:3px solid var(--acc);background:#f3f7f6;color:var(--muted)}
+  .mdbox code{background:#eef2f0;border-radius:4px;padding:1px 5px;font-family:ui-monospace,monospace;font-size:.9em}
+  .mdbox table.md{border-collapse:collapse;width:100%;margin:.5em 0;font-size:.92em}
+  .mdbox table.md th,.mdbox table.md td{border:1px solid var(--line);padding:5px 8px;text-align:left;vertical-align:top}
+  .mdbox table.md th{background:#eef2f0;color:var(--acc-d);font-weight:700}
+  #ch-body .mdbox p{text-indent:2em}
+  /* 进度反馈 */
+  .genprog{margin:12px 0;padding:10px 14px;border:1px solid var(--line);border-radius:10px;background:#f3f7f6;font-size:13px;color:var(--acc-d);min-height:20px}
+  .genprog .cur{font-weight:700}
+  .genprog .past{color:var(--muted);font-size:12px;display:block;margin-top:2px}
+  /* 章纲卡片 */
+  .ol-item{border:1px solid var(--line);border-radius:10px;margin:8px 0;padding:10px 12px;background:var(--surface)}
+  .ol-item .ol-head{display:flex;gap:8px;align-items:baseline}
+  .ol-item .ol-n{font-size:12px;color:var(--acc-d);font-weight:700;flex:0 0 auto}
+  .ol-item .ol-title{font-family:var(--serif);font-weight:700;font-size:15px}
+  .ol-item .ol-sum{color:#333;font-size:13.5px;margin:4px 0 0}
+  .ol-item details{margin-top:6px}
+  .ol-item details summary{cursor:pointer;font-size:12px;color:var(--muted)}
+  .ol-item textarea{margin-top:6px;min-height:70px;font-size:13px}
+  .ol-item .ol-edit{font-size:12px;color:var(--acc);cursor:pointer;margin-left:auto}
+  .audit-panel{border:1px solid var(--warn);border-radius:10px;padding:10px 12px;margin-top:10px;background:#fdf6f0}
+  .audit-panel h4{margin:0 0 6px;font-size:13px;color:var(--warn)}
+  .audit-panel .iss{font-size:13px;margin:4px 0;padding-left:4px;border-left:3px solid var(--warn);padding:2px 0 2px 8px}
+  /* 左侧项目栏 */
+  .layout{display:flex;align-items:flex-start}
+  .sidebar{position:sticky;top:49px;flex:0 0 230px;height:calc(100vh - 49px);overflow:auto;border-right:1px solid var(--line);background:var(--surface);padding:14px 12px}
+  .sidebar .side-head{font-size:12px;color:var(--muted);letter-spacing:.5px;margin:2px 4px 10px}
+  .sidebar .side-new{width:100%;margin-bottom:10px;font-weight:700;color:var(--acc);border-style:dashed}
+  .layout main{flex:1;min-width:0}
+  .book-item{padding:9px 10px;border-radius:9px;cursor:pointer;border:1px solid transparent;margin:3px 0}
+  .book-item:hover{background:#f3f7f6}
+  .book-item.active{background:#e7f2f0;border-color:var(--acc)}
+  .book-item .bk-kind{font-size:11px;color:var(--acc-d)}
+  .book-item .bk-title{font-family:var(--serif);font-size:14px;font-weight:700;margin:1px 0;word-break:break-all}
+  .book-item .bk-meta{font-size:11px;color:var(--muted)}
+  @media(max-width:760px){.sidebar{display:none}}
+  /* 项目总览 / 单章详情 */
+  .task-line{background:#eef7f5;border:1px solid var(--acc);border-radius:10px;padding:10px 14px;margin:10px 0;font-size:14px;color:var(--acc-d)}
+  .task-line b{color:var(--ink)}
+  .chap-row{border:1px solid var(--line);border-radius:11px;padding:12px 15px;margin:9px 0;background:var(--surface);cursor:pointer;transition:.12s}
+  .chap-row:hover{border-color:var(--acc);box-shadow:0 4px 14px rgba(14,158,142,.08)}
+  .chap-row .cr-head{display:flex;align-items:baseline;gap:8px}
+  .chap-row .cr-title{font-family:var(--serif);font-weight:700;font-size:15.5px}
+  .chap-row .cr-status{font-size:11px;padding:1px 8px;border-radius:999px;margin-left:auto}
+  .chap-row .cr-del{font-size:11px;color:#c0392b;margin-left:10px;opacity:.65}
+  .chap-row .cr-del:hover{opacity:1;text-decoration:underline}
+  .cr-status.ok{background:#e7f2f0;color:var(--acc-d)}
+  .cr-status.draft{background:#fdf3e8;color:var(--warn)}
+  .chap-row .cr-preview{color:var(--muted);font-size:13px;line-height:1.7;margin-top:5px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+  .backlink{border:none;background:none;color:var(--acc);padding:4px 0;font-size:13px}
+  .cd-title{font-family:var(--serif);font-size:22px;margin:6px 0 2px}
+  .card-edit{font-size:11px;color:var(--acc);cursor:pointer;float:right;font-weight:400}
+  .card-edit-wrap textarea{min-height:120px;font-size:12.5px;font-family:var(--serif)}
+  .vol-drawer summary{cursor:pointer;font-size:12px;color:var(--muted);padding:4px 0}
+  /* 人物面板 */
+  .panel-card{border-color:var(--acc)}
+  .panel-card .pl-row{font-size:13px;margin:2px 0 8px}
+  .panel-card table.pl-attrs{width:100%;border-collapse:collapse;font-size:12.5px;margin:0 0 6px}
+  .panel-card table.pl-attrs td{border:1px solid var(--line);padding:3px 8px}
+  .panel-card table.pl-attrs td:first-child{color:var(--muted);width:40%}
+  .panel-card .pl-sub{font-size:12px;color:var(--acc-d);font-weight:700;margin:6px 0 2px}
+  .panel-card .pl-list{margin:0;padding-left:1.2em;font-size:12.5px;line-height:1.7}
+</style>
+</head>
+<body>
+<header>
+  <span class="logo">jace 开源小说生成器</span>
+  <span class="sub">AI 自动写长篇 · 大纲→章纲→正文→审计 全流程</span>
+  <button style="margin-left:auto" onclick="openSettingsConfig()">🔑 设置</button>
+  <button onclick="openLogs()">🗂 输入记录</button>
+  <button onclick="openModelConfig()">⚙ 模型配置</button>
+</header>
+<div class="layout">
+<aside class="sidebar">
+  <div class="side-head">我的作品</div>
+  <button class="side-new" onclick="goHome()">＋ 新建创作</button>
+  <div id="book-list"></div>
+</aside>
+<main>
+  <!-- 首页 -->
+  <section id="home">
+    <div class="tabs">
+      <div class="tab sel" id="ht-start" onclick="homeTab('start')">开始创作</div>
+      <div class="tab" id="ht-flow" onclick="homeTab('flow')">流程说明</div>
+    </div>
+
+    <!-- 需要先配置密钥时的提示条 -->
+    <div class="task-line hidden" id="home-need-key" style="background:#fdf3e8;border-color:var(--warn);color:var(--warn)">
+      ⚠ 尚未配置模型 API Key，无法生成。请先点右上角「🔑 设置」填入你的密钥。
+      <button style="margin-left:10px" onclick="openSettingsConfig()">去配置</button>
+    </div>
+
+    <div id="home-start">
+      <h1>开始创作</h1>
+      <div class="cards">
+        <div class="card" onclick="openSettings('longform')">
+          <div class="ic">📖</div><h3>长篇小说</h3>
+          <p>输入初始设定 → 生成大纲与世界观 → 确认后自动连载</p>
+        </div>
+        <div class="card" onclick="openSettings('script')">
+          <div class="ic">🎬</div><h3>剧本创作</h3>
+          <p>输入初始设定 → 生成剧本结构 → 分场创作</p>
+        </div>
+      </div>
+    </div>
+
+    <div id="home-flow" class="hidden">
+      <h1>流程说明</h1>
+      <div class="foundation">
+        <section><h4>0 · 一次性配置</h4><div style="padding:12px 14px;line-height:1.9">
+          点右上角「🔑 设置」，填入你的模型 API Key（默认对接 DeepSeek，也可改 Base URL 接任意 OpenAI 兼容接口）。密钥只保存在你本机的 <code>data/config.json</code>，不会上传，也不会随仓库提交。也可用环境变量 <code>JACE_API_KEY</code> 注入。
+        </div></section>
+        <section><h4>1 · 建书 + 生成设定</h4><div style="padding:12px 14px;line-height:1.9">
+          填写书名、题材、目标章数与初始设定（世界观、金手指、主角、风格）。系统据此生成<b>故事框架、分卷卷纲、角色卡、伏笔与文风</b>，可逐项编辑或给意见重生成。
+        </div></section>
+        <section><h4>2 · 章纲规划 + 结构审计</h4><div style="padding:12px 14px;line-height:1.9">
+          每 5 章为一组生成章纲（标题 + 一句话 + 梗概），并自动做<b>结构审计</b>：检查是否服务总纲/分卷目标、前后承接、读者心智，不合格自动按意见修订。你可逐章编辑或整体给意见。
+        </div></section>
+        <section><h4>3 · 逐章写作 + 连贯性审计</h4><div style="padding:12px 14px;line-height:1.9">
+          按已确认章纲写正文，写完自动做<b>连贯性/设定一致性/节奏审计</b>，发现问题按等级自动修订，直到通过。手动模式下每章可人工确认、重写或改写。
+        </div></section>
+        <section><h4>4 · 人物面板（游戏/系统流可选）</h4><div style="padding:12px 14px;line-height:1.9">
+          游戏/LitRPG 题材会维护主角<b>等级/属性/装备/技能</b>面板：每章把当前面板作为上下文注入，写完依据正文自动更新数值，每 5 章在正文中完整展示一次。
+        </div></section>
+        <section><h4>5 · 自动连写 + 断点续写</h4><div style="padding:12px 14px;line-height:1.9">
+          可一键「自动写到完本」：后台持续写作，关闭页面也不中断；随时刷新即可看到最新进度与正文。配合看门狗脚本可自愈重启。
+        </div></section>
+      </div>
+    </div>
+  </section>
+
+  <!-- 工作区：左（项目总览 / 单章详情切换）+ 右卡片 -->
+  <section id="workspace" class="hidden">
+    <div class="ws-grid">
+      <div class="ws-left">
+        <!-- 视图 A：项目总览 -->
+        <div id="view-project">
+          <h1 id="pj-title"></h1>
+          <div class="task-line" id="pj-task"></div>
+          <div class="tabs" id="pj-actions"></div>
+          <div class="chapters" id="pj-chapters"></div>
+        </div>
+        <!-- 视图 B：单章详情 -->
+        <div id="view-chapter" class="hidden">
+          <button class="backlink" onclick="showProject()">← 返回目录</button>
+          <h2 id="cd-title" class="cd-title"></h2>
+          <div class="tabs" id="cd-actions"></div>
+          <div class="stage" id="stage"></div>
+          <div class="reader">
+            <div class="body" id="ch-body"></div>
+          </div>
+          <div class="toolbar">
+            <button id="btn-pause" class="danger hidden" onclick="pauseWrite()">⏸ 暂停生成</button>
+          </div>
+          <div id="cd-audit"></div>
+        </div>
+      </div>
+      <aside class="ws-right"><div id="cards"></div></aside>
+    </div>
+  </section>
+</main>
+</div>
+
+<!-- 初始设定弹框 -->
+<div class="scrim" id="m-settings"><div class="modal">
+  <h2 id="settings-title">长篇小说 · 初始设定</h2>
+  <label>书名</label><input id="f-title" placeholder="例如：开局毒妈，BOSS的血怎么又满了" />
+  <div class="row">
+    <div><label>题材</label>
+      <select id="f-genre">
+        <option value="other">通用/自定义</option>
+        <option value="xianxia">仙侠</option><option value="xuanhuan">玄幻</option>
+        <option value="urban">都市</option><option value="litrpg">游戏/LitRPG</option>
+        <option value="progression">升级流</option><option value="cultivation">修真</option>
+        <option value="sci-fi">科幻</option><option value="horror">恐怖</option>
+        <option value="isekai">异世界</option><option value="romantasy">浪漫奇幻</option>
+        <option value="system-apocalypse">系统末世</option><option value="tower-climber">爬塔</option>
+        <option value="dungeon-core">地下城核心</option><option value="cozy">治愈日常</option>
+      </select>
+    </div>
+    <div><label>目标章数</label><input id="f-target" type="number" value="200" /></div>
+    <div><label>每章字数</label><input id="f-words" type="number" value="3000" /></div>
+  </div>
+  <label>初始设定（世界观、金手指、主角、风格等，越具体越好）</label>
+  <textarea id="f-settings" placeholder="描述你的故事设定：世界观、主角、金手指机制、风格基调、双线结构等……"></textarea>
+  <div class="toolbar">
+    <button onclick="closeModal('m-settings')">取消</button>
+    <button class="primary" id="btn-gen" onclick="genFoundation()">生成大纲与世界观</button>
+  </div>
+  <div id="gen-progress" class="genprog hidden"></div>
+</div></div>
+
+<!-- 近5章章纲确认弹框 -->
+<div class="scrim" id="m-outline"><div class="modal">
+  <h2>确认章纲 <span class="badge" id="outline-range">近 5 章</span></h2>
+  <p style="color:var(--muted);font-size:13px;margin:.3em 0">先看每章一句话总结，展开可看梗概。可逐章编辑，或在下方给出整体意见重新生成。确认后开始写作。</p>
+  <div id="outline-progress" class="genprog hidden"></div>
+  <div id="outline-audit-log"></div>
+  <div id="outline-list"></div>
+  <label>整体修改意见（重排节奏 / 加爆点 / 调整走向等）：</label>
+  <textarea id="outline-feedback" placeholder="例如：第2章太平，提前引入对手；第4章加一个反转爆点……"></textarea>
+  <div class="toolbar">
+    <button id="btn-outline-autocorrect" onclick="autocorrectOutlines()" title="让 AI 先按审计标准自查自改章纲，改完你再审">🔧 自动纠正</button>
+    <button id="btn-outline-regen" onclick="regenOutlines()">按意见重新生成章纲</button>
+    <button class="primary" id="btn-outline-confirm" onclick="confirmOutlines()">✅ 确认章纲，逐章写作</button>
+    <button id="btn-outline-auto" onclick="confirmOutlines(true)" title="不再逐章确认，直接写到完本">🚀 直接自动写到完本</button>
+  </div>
+  <p class="hint" style="margin-top:8px">自动模式下不会再打断你确认章纲；已确认的这几章仍会被遵循，之后各章由引擎依据卷纲自动推进。</p>
+</div></div>
+
+<!-- 大纲确认弹框 -->
+<div class="scrim" id="m-foundation"><div class="modal">
+  <h2>确认设定 <span class="badge">大纲 / 世界观 / 人设 / 伏笔</span></h2>
+  <div class="foundation" id="foundation-view"></div>
+  <label>不满意？输入修订意见，重新生成设定：</label>
+  <textarea id="f-revise" placeholder="例如：主角动机再强一点；世界观加入XX规则；把金手指改成……"></textarea>
+  <div class="toolbar">
+    <button id="btn-revise-fnd" onclick="reviseFoundation()">按意见重生成设定</button>
+    <button class="primary" onclick="startWriting()">✅ 确认设定，开始写作</button>
+  </div>
+</div></div>
+
+<!-- 章节确认弹框（步骤6/7/8 共用，动态渲染） -->
+<div class="scrim" id="m-confirm"><div class="modal">
+  <h2 id="confirm-title">第 1 章生成完成</h2>
+  <div class="body" id="confirm-body" style="font-family:var(--serif);font-size:15px;line-height:1.95;white-space:pre-wrap;max-height:44vh;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:14px;background:#fbfcfb"></div>
+  <div class="tabs" id="confirm-tabs"></div>
+  <div id="confirm-input-wrap">
+    <textarea id="confirm-input" placeholder="输入你的修订/重写意见……"></textarea>
+    <div class="hint" id="confirm-hint"></div>
+  </div>
+  <div class="toolbar">
+    <button class="primary" id="confirm-submit" onclick="submitConfirm()">提交</button>
+  </div>
+</div></div>
+
+<!-- 输入记录弹框 -->
+<div class="scrim" id="m-logs"><div class="modal">
+  <h2>输入记录 <span class="badge">你发送过的设定与意见</span></h2>
+  <div id="logs-body" style="margin-top:10px"></div>
+  <div class="toolbar"><button onclick="closeModal('m-logs')">关闭</button></div>
+</div></div>
+
+<!-- 设置弹框：API Key / Base URL / 可用模型 -->
+<div class="scrim" id="m-config"><div class="modal">
+  <h2>设置 <span class="badge">模型接入 · 密钥</span></h2>
+  <p style="color:var(--muted);font-size:13px;margin:.3em 0 0">密钥只保存在本机 <code>data/config.json</code>（已被 .gitignore 忽略），不会上传或随仓库提交。也可用环境变量 <code>JACE_API_KEY</code> / <code>OPENAI_API_KEY</code> 注入。</p>
+  <label>API Key <span id="cfg-key-state" style="color:var(--muted)"></span></label>
+  <input id="cfg-key" type="password" placeholder="留空则不修改已保存的密钥" autocomplete="off" />
+  <label>Base URL（OpenAI 兼容接口地址）</label>
+  <input id="cfg-baseurl" placeholder="https://api.deepseek.com" />
+  <label>可用模型（每行一个：<code>模型id</code> 或 <code>模型id|显示名</code>）</label>
+  <textarea id="cfg-models" placeholder="deepseek-v4-flash|Fast（快·省）&#10;deepseek-v4-pro|Strong（强·贵）"></textarea>
+  <div class="row">
+    <div><label>快模型（正文/审查默认）</label><input id="cfg-fast" placeholder="deepseek-v4-flash" /></div>
+    <div><label>强模型（大纲/审计/修订默认）</label><input id="cfg-strong" placeholder="deepseek-v4-pro" /></div>
+    <div><label>温度</label><input id="cfg-temp" type="number" step="0.1" value="0.7" /></div>
+  </div>
+  <div class="toolbar">
+    <button onclick="closeModal('m-config')">取消</button>
+    <button class="primary" onclick="saveConfig()">保存设置</button>
+  </div>
+  <div class="hint" id="cfg-hint"></div>
+</div></div>
+
+<!-- 模型配置弹框 -->
+<div class="scrim" id="m-model"><div class="modal">
+  <h2>模型配置 <span class="badge">分阶段选择模型</span></h2>
+  <p style="color:var(--muted);font-size:13px;margin:.3em 0 0">不同阶段可用不同模型：大纲/审计/修订用更强的模型（质量更高），正文/审查用更快的模型（更省更快）。可用模型列表在「🔑 设置」里维护。</p>
+  <div id="model-rows" style="margin-top:10px"></div>
+  <div class="toolbar">
+    <button onclick="closeModal('m-model')">取消</button>
+    <button class="primary" onclick="saveModelConfig()">保存配置</button>
+  </div>
+</div></div>
+
+<script src="/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,10 @@
+{
+  "architect": "deepseek-v4-pro",
+  "foundation-reviewer": "deepseek-v4-pro",
+  "planner": "deepseek-v4-pro",
+  "writer": "deepseek-v4-flash",
+  "auditor": "deepseek-v4-flash",
+  "reviser": "deepseek-v4-pro",
+  "length-normalizer": "deepseek-v4-flash",
+  "state-validator": "deepseek-v4-flash"
+}

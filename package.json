@@ -1,0 +1,30 @@
+{
+  "name": "jace-novel-generator",
+  "version": "0.1.0",
+  "description": "jace 开源小说生成器 —— AI 自动写长篇：建书→大纲/世界观→章纲+结构审计→逐章正文+连贯性审计→自动连写，支持人物属性面板与断点续写。",
+  "type": "module",
+  "license": "MIT",
+  "keywords": [
+    "ai",
+    "novel",
+    "web-novel",
+    "story-generator",
+    "llm",
+    "deepseek",
+    "openai-compatible",
+    "chinese"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node server.mjs",
+    "auto:start": "node auto-ctl.mjs start",
+    "auto:status": "node auto-ctl.mjs status",
+    "auto:watch": "node auto-ctl.mjs watch",
+    "auto:stop": "node auto-ctl.mjs stop"
+  },
+  "dependencies": {
+    "@actalk/inkos-core": "^1.6.0"
+  }
+}

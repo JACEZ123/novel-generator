@@ -1,0 +1,11 @@
+{
+  "baseUrl": "https://api.deepseek.com",
+  "apiKey": "",
+  "models": [
+    { "id": "deepseek-v4-flash", "label": "Fast（快·省）" },
+    { "id": "deepseek-v4-pro", "label": "Strong（强·贵）" }
+  ],
+  "fastModel": "deepseek-v4-flash",
+  "strongModel": "deepseek-v4-pro",
+  "temperature": 0.7
+}

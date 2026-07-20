@@ -1,0 +1,22 @@
+# 依赖
+node_modules/
+
+# 用户密钥与运行时配置（绝不提交）
+data/config.json
+.env
+
+# 生成的作品数据与运行时状态
+data/books/
+data/.inkos/
+
+# 日志与看门狗快照
+*.log
+server.err.log
+server.log
+start.out.log
+start.err.log
+autowatch.json
+
+# 系统
+.DS_Store
+Thumbs.db
