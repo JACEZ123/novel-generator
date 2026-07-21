@@ -1,5 +1,9 @@
-// 自动连写控制/看门狗脚本。用法：node auto-ctl.mjs <start|status|stop|watch> [bookId]
-// bookId 默认取 data/books 下最近修改的一本（从文件系统读取，编码正确，避免命令行中文乱码）。
+// ============================================================================
+// 网文小说生成器 · 作者 Jace
+// 自动连写控制 / 看门狗。用法：node auto-ctl.mjs <start|status|stop|watch> [bookId]
+// bookId 默认取 data/books 下最近修改的一本（从文件系统读取，避免命令行中文乱码）
+// © Jace · MIT License
+// ============================================================================
 import { readdir, stat, readFile, writeFile, rm } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";

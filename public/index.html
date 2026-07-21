@@ -1,289 +1,185 @@
 <!doctype html>
+<!--
+  网文小说生成器 · 作者 Jace
+  © Jace · MIT License
+-->
 <html lang="zh">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>jace 开源小说生成器</title>
-<style>
-  :root{
-    --bg:#f4f6f5; --surface:#fff; --ink:#1a1f1d; --muted:#5f6b64; --line:#e2e7e4;
-    --acc:#0e9e8e; --acc-d:#0b7d70; --warn:#c26a2b; --serif:"Songti SC","Noto Serif CJK SC",Georgia,serif;
-    --sans:"PingFang SC","Microsoft YaHei",system-ui,sans-serif;
-  }
-  *{box-sizing:border-box}
-  body{margin:0;font-family:var(--sans);background:var(--bg);color:var(--ink)}
-  header{padding:14px 22px;border-bottom:1px solid var(--line);background:var(--surface);display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:5}
-  header .logo{font-weight:800;color:var(--acc);letter-spacing:.5px}
-  header .sub{color:var(--muted);font-size:13px}
-  main{max-width:900px;margin:0 auto;padding:26px 20px 80px}
-  h1{font-family:var(--serif);font-weight:700}
-  .cards{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:20px}
-  .card{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:28px;cursor:pointer;transition:.15s}
-  .card:hover{border-color:var(--acc);transform:translateY(-2px);box-shadow:0 8px 24px rgba(14,158,142,.1)}
-  .card h3{margin:.2em 0;font-size:20px}
-  .card p{color:var(--muted);font-size:13px;margin:0}
-  .card .ic{font-size:30px}
-  button{font-family:var(--sans);cursor:pointer;border-radius:10px;border:1px solid var(--line);background:var(--surface);color:var(--ink);padding:9px 16px;font-size:14px}
-  button:hover{border-color:var(--acc)}
-  button.primary{background:var(--acc);color:#fff;border-color:var(--acc);font-weight:700}
-  button.primary:hover{background:var(--acc-d)}
-  button.danger{color:#c0392b;border-color:#e7c3bd}
-  button:disabled{opacity:.45;cursor:not-allowed}
-  input,select,textarea{font-family:var(--sans);width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:9px;font-size:14px;background:#fff;color:var(--ink)}
-  textarea{resize:vertical;min-height:90px;line-height:1.6}
-  label{display:block;font-size:13px;color:var(--muted);margin:12px 0 5px}
-  .row{display:flex;gap:12px}.row>div{flex:1}
-  .scrim{position:fixed;inset:0;background:#0007;display:none;align-items:center;justify-content:center;z-index:20;padding:20px}
-  .scrim.on{display:flex}
-  .modal{background:var(--surface);border-radius:16px;max-width:640px;width:100%;max-height:88vh;overflow:auto;padding:24px}
-  .modal h2{margin:0 0 6px;font-family:var(--serif)}
-  .foundation section{border:1px solid var(--line);border-radius:12px;margin:12px 0;overflow:hidden}
-  .foundation section>h4{margin:0;padding:10px 14px;background:#eef2f0;font-size:14px;color:var(--acc-d)}
-  .foundation pre{margin:0;padding:12px 14px;white-space:pre-wrap;font-family:var(--serif);font-size:14px;line-height:1.75;max-height:280px;overflow:auto}
-  .reader{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:26px 30px;margin-top:16px;min-height:200px}
-  .reader h2{font-family:var(--serif);font-size:22px;text-align:center;margin:0 0 20px}
-  .reader .body{font-family:var(--serif);font-size:16.5px;line-height:2;white-space:pre-wrap;text-align:justify}
-  .toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:14px}
-  .stage{font-size:12px;color:var(--muted);font-family:ui-monospace,monospace}
-  .tabs{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0}
-  .tab{padding:8px 14px;border-radius:999px;border:1px solid var(--line);background:#fff;font-size:13px;cursor:pointer}
-  .tab.sel{background:var(--acc);color:#fff;border-color:var(--acc)}
-  .chapters{margin-top:10px}
-  .chapters .chap{border:1px solid var(--line);border-radius:10px;padding:12px 16px;margin:8px 0;background:var(--surface)}
-  .chapters .chap h3{margin:0 0 6px;font-family:var(--serif);font-size:16px}
-  .chapters .chap .body{font-family:var(--serif);font-size:15px;line-height:1.9;white-space:pre-wrap;max-height:200px;overflow:auto;color:#333}
-  .hidden{display:none}
-  .hint{font-size:12px;color:var(--warn);margin-top:6px}
-  main{max-width:1200px}
-  .ws-grid{display:grid;grid-template-columns:1fr 340px;gap:18px;align-items:start}
-  @media(max-width:860px){.ws-grid{grid-template-columns:1fr}}
-  .ws-right{position:sticky;top:70px;max-height:calc(100vh-90px);overflow:auto}
-  .cardbox{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:12px}
-  .cardbox h4{margin:0 0 8px;font-size:13px;color:var(--acc-d)}
-  .cardbox pre{margin:0;white-space:pre-wrap;font-family:var(--serif);font-size:12.5px;line-height:1.7;max-height:220px;overflow:auto;color:#333}
-  .cardbox details{border-top:1px solid var(--line);padding:6px 0}
-  .cardbox details summary{cursor:pointer;font-size:13px;font-family:var(--serif)}
-  .cardbox .rtier{font-size:10px;background:#eef2f0;color:var(--acc-d);border-radius:6px;padding:1px 6px;margin-left:6px}
-  .cardbox details pre{max-height:180px;margin-top:6px}
-  .logrow{border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:8px 0}
-  .logmeta{font-size:12px;color:var(--muted);margin-bottom:4px}
-  .logrow pre{margin:0;white-space:pre-wrap;font-family:var(--serif);font-size:13px;line-height:1.7}
-  #ch-body p{margin:0 0 1em;text-indent:2em}
-  .badge{display:inline-block;font-size:11px;padding:2px 8px;border-radius:999px;background:#eef2f0;color:var(--acc-d);margin-left:8px}
-  /* Markdown 渲染（卡片/大纲/正文通用） */
-  .mdbox{font-family:var(--serif);font-size:13px;line-height:1.75;color:#333;max-height:260px;overflow:auto}
-  .foundation .mdbox{max-height:300px;font-size:14px}
-  .reader .body .mdbox{max-height:none;font-size:16.5px;line-height:2}
-  .mdbox h3.md,.mdbox h4.md,.mdbox h5.md,.mdbox h6.md{margin:.7em 0 .3em;font-family:var(--sans);color:var(--acc-d);font-size:1.02em}
-  .mdbox p{margin:0 0 .7em}
-  .mdbox ul.md,.mdbox ol.md{margin:.3em 0 .7em;padding-left:1.4em}
-  .mdbox li{margin:.15em 0}
-  .mdbox blockquote.md{margin:.4em 0;padding:.2em .8em;border-left:3px solid var(--acc);background:#f3f7f6;color:var(--muted)}
-  .mdbox code{background:#eef2f0;border-radius:4px;padding:1px 5px;font-family:ui-monospace,monospace;font-size:.9em}
-  .mdbox table.md{border-collapse:collapse;width:100%;margin:.5em 0;font-size:.92em}
-  .mdbox table.md th,.mdbox table.md td{border:1px solid var(--line);padding:5px 8px;text-align:left;vertical-align:top}
-  .mdbox table.md th{background:#eef2f0;color:var(--acc-d);font-weight:700}
-  #ch-body .mdbox p{text-indent:2em}
-  /* 进度反馈 */
-  .genprog{margin:12px 0;padding:10px 14px;border:1px solid var(--line);border-radius:10px;background:#f3f7f6;font-size:13px;color:var(--acc-d);min-height:20px}
-  .genprog .cur{font-weight:700}
-  .genprog .past{color:var(--muted);font-size:12px;display:block;margin-top:2px}
-  /* 章纲卡片 */
-  .ol-item{border:1px solid var(--line);border-radius:10px;margin:8px 0;padding:10px 12px;background:var(--surface)}
-  .ol-item .ol-head{display:flex;gap:8px;align-items:baseline}
-  .ol-item .ol-n{font-size:12px;color:var(--acc-d);font-weight:700;flex:0 0 auto}
-  .ol-item .ol-title{font-family:var(--serif);font-weight:700;font-size:15px}
-  .ol-item .ol-sum{color:#333;font-size:13.5px;margin:4px 0 0}
-  .ol-item details{margin-top:6px}
-  .ol-item details summary{cursor:pointer;font-size:12px;color:var(--muted)}
-  .ol-item textarea{margin-top:6px;min-height:70px;font-size:13px}
-  .ol-item .ol-edit{font-size:12px;color:var(--acc);cursor:pointer;margin-left:auto}
-  .audit-panel{border:1px solid var(--warn);border-radius:10px;padding:10px 12px;margin-top:10px;background:#fdf6f0}
-  .audit-panel h4{margin:0 0 6px;font-size:13px;color:var(--warn)}
-  .audit-panel .iss{font-size:13px;margin:4px 0;padding-left:4px;border-left:3px solid var(--warn);padding:2px 0 2px 8px}
-  /* 左侧项目栏 */
-  .layout{display:flex;align-items:flex-start}
-  .sidebar{position:sticky;top:49px;flex:0 0 230px;height:calc(100vh - 49px);overflow:auto;border-right:1px solid var(--line);background:var(--surface);padding:14px 12px}
-  .sidebar .side-head{font-size:12px;color:var(--muted);letter-spacing:.5px;margin:2px 4px 10px}
-  .sidebar .side-new{width:100%;margin-bottom:10px;font-weight:700;color:var(--acc);border-style:dashed}
-  .layout main{flex:1;min-width:0}
-  .book-item{padding:9px 10px;border-radius:9px;cursor:pointer;border:1px solid transparent;margin:3px 0}
-  .book-item:hover{background:#f3f7f6}
-  .book-item.active{background:#e7f2f0;border-color:var(--acc)}
-  .book-item .bk-kind{font-size:11px;color:var(--acc-d)}
-  .book-item .bk-title{font-family:var(--serif);font-size:14px;font-weight:700;margin:1px 0;word-break:break-all}
-  .book-item .bk-meta{font-size:11px;color:var(--muted)}
-  @media(max-width:760px){.sidebar{display:none}}
-  /* 项目总览 / 单章详情 */
-  .task-line{background:#eef7f5;border:1px solid var(--acc);border-radius:10px;padding:10px 14px;margin:10px 0;font-size:14px;color:var(--acc-d)}
-  .task-line b{color:var(--ink)}
-  .chap-row{border:1px solid var(--line);border-radius:11px;padding:12px 15px;margin:9px 0;background:var(--surface);cursor:pointer;transition:.12s}
-  .chap-row:hover{border-color:var(--acc);box-shadow:0 4px 14px rgba(14,158,142,.08)}
-  .chap-row .cr-head{display:flex;align-items:baseline;gap:8px}
-  .chap-row .cr-title{font-family:var(--serif);font-weight:700;font-size:15.5px}
-  .chap-row .cr-status{font-size:11px;padding:1px 8px;border-radius:999px;margin-left:auto}
-  .chap-row .cr-del{font-size:11px;color:#c0392b;margin-left:10px;opacity:.65}
-  .chap-row .cr-del:hover{opacity:1;text-decoration:underline}
-  .cr-status.ok{background:#e7f2f0;color:var(--acc-d)}
-  .cr-status.draft{background:#fdf3e8;color:var(--warn)}
-  .chap-row .cr-preview{color:var(--muted);font-size:13px;line-height:1.7;margin-top:5px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
-  .backlink{border:none;background:none;color:var(--acc);padding:4px 0;font-size:13px}
-  .cd-title{font-family:var(--serif);font-size:22px;margin:6px 0 2px}
-  .card-edit{font-size:11px;color:var(--acc);cursor:pointer;float:right;font-weight:400}
-  .card-edit-wrap textarea{min-height:120px;font-size:12.5px;font-family:var(--serif)}
-  .vol-drawer summary{cursor:pointer;font-size:12px;color:var(--muted);padding:4px 0}
-  /* 人物面板 */
-  .panel-card{border-color:var(--acc)}
-  .panel-card .pl-row{font-size:13px;margin:2px 0 8px}
-  .panel-card table.pl-attrs{width:100%;border-collapse:collapse;font-size:12.5px;margin:0 0 6px}
-  .panel-card table.pl-attrs td{border:1px solid var(--line);padding:3px 8px}
-  .panel-card table.pl-attrs td:first-child{color:var(--muted);width:40%}
-  .panel-card .pl-sub{font-size:12px;color:var(--acc-d);font-weight:700;margin:6px 0 2px}
-  .panel-card .pl-list{margin:0;padding-left:1.2em;font-size:12.5px;line-height:1.7}
-  /* 模型服务：模型卡片 */
-  .mdl-card{border:1px solid var(--line);border-radius:11px;padding:12px 14px;margin:8px 0;background:var(--surface)}
-  .mdl-card .mdl-head{display:flex;align-items:center;gap:8px}
-  .mdl-card .mdl-name{font-weight:700;font-size:15px}
-  .mdl-card .mdl-act{margin-left:auto;display:flex;gap:14px;font-size:13px}
-  .mdl-card .mdl-act a{color:var(--acc);cursor:pointer}
-  .mdl-card .mdl-act a.del{color:#c0392b}
-  .mdl-card .mdl-id{font-size:12px;color:var(--muted);font-family:ui-monospace,monospace;margin-top:3px}
-  .mdl-card .mdl-tags{margin-top:8px;display:flex;gap:8px;flex-wrap:wrap}
-  .mdl-tag{font-size:11px;padding:2px 9px;border-radius:6px;background:#eef2f0;color:var(--acc-d)}
-  .mdl-tag.blue{background:#e7efff;color:#2b6cb0}
-  .mdl-empty{font-size:13px;color:var(--muted);padding:14px;text-align:center;border:1px dashed var(--line);border-radius:10px}
-  /* 设置中心（Hub）：左菜单 + 右内容 */
-  #m-hub .modal{max-width:960px;width:100%;padding:0;overflow:hidden}
-  .hub-head{display:flex;align-items:center;padding:16px 22px;border-bottom:1px solid var(--line)}
-  .hub-head h2{margin:0;font-family:var(--serif)}
-  .hub-head .hub-x{margin-left:auto;cursor:pointer;color:var(--muted);font-size:20px;line-height:1}
-  .hub-body{display:flex;min-height:520px;max-height:78vh}
-  .hub-nav{flex:0 0 200px;border-right:1px solid var(--line);padding:12px 8px;overflow:auto;background:#fafbfb}
-  .hub-navi{padding:10px 12px;border-radius:9px;cursor:pointer;font-size:14px;color:var(--ink);display:flex;align-items:center;gap:8px;margin:2px 0}
-  .hub-navi:hover{background:#f0f4f3}
-  .hub-navi.sel{background:#e7f2f0;color:var(--acc-d);font-weight:700}
-  .hub-content{flex:1;min-width:0;padding:20px 24px;overflow:auto}
-  .hub-content h3.sec-t{margin:0 0 4px;font-family:var(--serif);font-size:18px}
-  .hub-content .sec-d{color:var(--muted);font-size:13px;margin:0 0 14px}
-  /* Skills 两栏 */
-  .sk-grid{display:grid;grid-template-columns:230px 1fr;gap:16px;align-items:start}
-  .sk-list{border:1px solid var(--line);border-radius:10px;overflow:hidden}
-  .sk-list .sk-item{padding:9px 12px;font-size:13px;cursor:pointer;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:6px}
-  .sk-list .sk-item:hover{background:#f3f7f6}
-  .sk-list .sk-item.sel{background:#e7f2f0;color:var(--acc-d);font-weight:700}
-  .sk-empty{padding:14px;color:var(--muted);font-size:13px;text-align:center}
-  /* 题材表 */
-  table.gn-tbl{width:100%;border-collapse:collapse;font-size:13px}
-  table.gn-tbl th,table.gn-tbl td{border:1px solid var(--line);padding:6px 9px;text-align:left}
-  table.gn-tbl th{background:#eef2f0;color:var(--acc-d)}
-  table.gn-tbl input[type=text]{padding:5px 8px}
-  @media(max-width:760px){.hub-nav{flex-basis:140px}.sk-grid{grid-template-columns:1fr}}
-</style>
+<meta name="author" content="Jace" />
+<meta name="application-name" content="网文小说生成器" />
+<title>网文小说生成器 · Jace</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
-<header>
-  <span class="logo">jace 开源小说生成器</span>
-  <span class="sub">AI 自动写长篇 · 大纲→章纲→正文→审计 全流程</span>
-  <button style="margin-left:auto" onclick="openHub('models')">⚙ 设置</button>
-  <button onclick="openLogs()">🗂 输入记录</button>
-</header>
-<div class="layout">
-<aside class="sidebar">
-  <div class="side-head">我的作品</div>
-  <button class="side-new" onclick="goHome()">＋ 新建创作</button>
-  <div id="book-list"></div>
-  <div style="border-top:1px solid var(--line);margin-top:12px;padding-top:10px">
-    <div class="book-item" onclick="openHub('models')" style="display:flex;align-items:center;gap:8px"><span>⚙</span><span class="bk-title" style="margin:0">设置</span></div>
-  </div>
-</aside>
-<main>
-  <!-- 首页 -->
-  <section id="home">
-    <div class="tabs">
-      <div class="tab sel" id="ht-start" onclick="homeTab('start')">开始创作</div>
-      <div class="tab" id="ht-flow" onclick="homeTab('flow')">流程说明</div>
-    </div>
-
-    <!-- 需要先配置密钥时的提示条 -->
-    <div class="task-line hidden" id="home-need-key" style="background:#fdf3e8;border-color:var(--warn);color:var(--warn)">
-      ⚠ 尚未配置模型 API Key，无法生成。请先点右上角「🔑 设置」填入你的密钥。
-      <button style="margin-left:10px" onclick="openSettingsConfig()">去配置</button>
-    </div>
-
-    <div id="home-start">
-      <h1>开始创作</h1>
-      <div class="cards">
-        <div class="card" onclick="openSettings('longform')">
-          <div class="ic">📖</div><h3>长篇小说</h3>
-          <p>输入初始设定 → 生成大纲与世界观 → 确认后自动连载</p>
-        </div>
-        <div class="card" onclick="openSettings('script')">
-          <div class="ic">🎬</div><h3>剧本创作</h3>
-          <p>输入初始设定 → 生成剧本结构 → 分场创作</p>
-        </div>
-      </div>
-    </div>
-
-    <div id="home-flow" class="hidden">
-      <h1>流程说明</h1>
-      <div class="foundation">
-        <section><h4>0 · 一次性配置</h4><div style="padding:12px 14px;line-height:1.9">
-          点右上角「🔑 设置」，填入你的模型 API Key（默认对接 DeepSeek，也可改 Base URL 接任意 OpenAI 兼容接口）。密钥只保存在你本机的 <code>data/config.json</code>，不会上传，也不会随仓库提交。也可用环境变量 <code>NOVEL_API_KEY</code> 注入。
-        </div></section>
-        <section><h4>1 · 建书 + 生成设定</h4><div style="padding:12px 14px;line-height:1.9">
-          填写书名、题材、目标章数与初始设定（世界观、金手指、主角、风格）。系统据此生成<b>故事框架、分卷卷纲、角色卡、伏笔与文风</b>，可逐项编辑或给意见重生成。
-        </div></section>
-        <section><h4>2 · 章纲规划 + 结构审计</h4><div style="padding:12px 14px;line-height:1.9">
-          每 5 章为一组生成章纲（标题 + 一句话 + 梗概），并自动做<b>结构审计</b>：检查是否服务总纲/分卷目标、前后承接、读者心智，不合格自动按意见修订。你可逐章编辑或整体给意见。
-        </div></section>
-        <section><h4>3 · 逐章写作 + 连贯性审计</h4><div style="padding:12px 14px;line-height:1.9">
-          按已确认章纲写正文，写完自动做<b>连贯性/设定一致性/节奏审计</b>，发现问题按等级自动修订，直到通过。手动模式下每章可人工确认、重写或改写。
-        </div></section>
-        <section><h4>4 · 人物面板（游戏/系统流可选）</h4><div style="padding:12px 14px;line-height:1.9">
-          游戏/LitRPG 题材会维护主角<b>等级/属性/装备/技能</b>面板：每章把当前面板作为上下文注入，写完依据正文自动更新数值，每 5 章在正文中完整展示一次。
-        </div></section>
-        <section><h4>5 · 自动连写 + 断点续写</h4><div style="padding:12px 14px;line-height:1.9">
-          可一键「自动写到完本」：后台持续写作，关闭页面也不中断；随时刷新即可看到最新进度与正文。配合看门狗脚本可自愈重启。
-        </div></section>
-      </div>
-    </div>
-  </section>
-
-  <!-- 工作区：左（项目总览 / 单章详情切换）+ 右卡片 -->
-  <section id="workspace" class="hidden">
-    <div class="ws-grid">
-      <div class="ws-left">
-        <!-- 视图 A：项目总览 -->
-        <div id="view-project">
-          <h1 id="pj-title"></h1>
-          <div class="task-line" id="pj-task"></div>
-          <div class="tabs" id="pj-actions"></div>
-          <div class="chapters" id="pj-chapters"></div>
-        </div>
-        <!-- 视图 B：单章详情 -->
-        <div id="view-chapter" class="hidden">
-          <button class="backlink" onclick="showProject()">← 返回目录</button>
-          <h2 id="cd-title" class="cd-title"></h2>
-          <div class="tabs" id="cd-actions"></div>
-          <div class="stage" id="stage"></div>
-          <div class="reader">
-            <div class="body" id="ch-body"></div>
-          </div>
-          <div class="toolbar">
-            <button id="btn-pause" class="danger hidden" onclick="pauseWrite()">⏸ 暂停生成</button>
-          </div>
-          <div id="cd-audit"></div>
-        </div>
-      </div>
-      <aside class="ws-right"><div id="cards"></div></aside>
-    </div>
-  </section>
-</main>
+<div class="app-bg" aria-hidden="true">
+  <div class="app-bg-blob app-bg-blob-a"></div>
+  <div class="app-bg-blob app-bg-blob-b"></div>
 </div>
 
-<!-- 初始设定弹框 -->
-<div class="scrim" id="m-settings"><div class="modal">
-  <h2 id="settings-title">长篇小说 · 初始设定</h2>
+<header class="hud-header">
+  <div class="hud-brand">
+    <div class="hud-logo-mark">J</div>
+    <div class="hud-brand-text">
+      <span class="hud-logo">网文小说生成器</span>
+      <span class="hud-tagline">作者 Jace · AI 自动写长篇 · 大纲 → 章纲 → 正文 → 审计</span>
+    </div>
+  </div>
+  <div class="hud-status-bar">
+    <span class="hud-pill" id="hud-sys-status"><span class="pulse-dot"></span>服务就绪</span>
+    <span class="hud-pill hud-pill-dim" id="hud-clock">--:--:--</span>
+  </div>
+  <div class="hud-actions">
+    <button type="button" class="hud-btn" onclick="openHub('models')">设置</button>
+    <button type="button" class="hud-btn" onclick="openLogs()">输入记录</button>
+  </div>
+</header>
+
+<div class="ops-shell">
+  <aside class="dock">
+    <div class="dock-section">
+      <div class="dock-label">我的作品</div>
+      <button type="button" class="dock-new" onclick="goHome()">
+        <span class="dock-new-icon">+</span>
+        <span>新建创作</span>
+      </button>
+      <div class="dock-list" id="book-list"></div>
+    </div>
+    <div class="dock-footer">
+      <button type="button" class="dock-link" onclick="openHub('models')">设置</button>
+      <button type="button" class="dock-link" onclick="openErrorLookup()">报错自查</button>
+    </div>
+  </aside>
+
+  <main class="ops-main">
+    <!-- ═══ 指挥台首页 ═══ -->
+    <section id="home" class="view-command">
+      <div class="cmd-alert hidden" id="home-need-key">
+        <span class="cmd-alert-icon">!</span>
+        <span>尚未配置 API 密钥，无法生成内容。请先在设置中填入密钥。</span>
+        <button type="button" class="hud-btn hud-btn-sm" onclick="openSettingsConfig()">去配置</button>
+      </div>
+
+      <nav class="cmd-nav">
+        <button type="button" class="cmd-nav-item sel" id="ht-start" onclick="homeTab('start')">开始创作</button>
+        <button type="button" class="cmd-nav-item" id="ht-flow" onclick="homeTab('flow')">流程说明</button>
+      </nav>
+
+      <div id="home-start">
+        <div class="cmd-hero hud-panel">
+          <div class="cmd-hero-top">
+            <span class="cmd-badge">本地 AI 写作工作台</span>
+            <span class="cmd-coord">数据仅存本机 · 支持断点续写</span>
+          </div>
+          <h1 class="cmd-title">开始你的下一部长篇</h1>
+          <p class="cmd-desc">从世界观、卷纲到逐章正文与连贯性审计，一站完成。关闭网页后后台仍可自动连写，随时回来查看进度。</p>
+          <div class="cmd-metrics">
+            <div class="cmd-metric"><span class="cmd-metric-val">6</span><span class="cmd-metric-lbl">核心阶段</span></div>
+            <div class="cmd-metric"><span class="cmd-metric-val">5</span><span class="cmd-metric-lbl">章一组纲</span></div>
+            <div class="cmd-metric"><span class="cmd-metric-val">24/7</span><span class="cmd-metric-lbl">后台连写</span></div>
+          </div>
+        </div>
+
+        <div class="cmd-bento">
+          <article class="module-card module-primary hud-panel" onclick="openSettings('longform')">
+            <div class="module-icon module-icon-novel"></div>
+            <span class="module-tag">推荐</span>
+            <h3>长篇小说</h3>
+            <p>输入设定 → 生成大纲与世界观 → 确认后自动连载写作。</p>
+            <div class="module-action">开始创作 <span>→</span></div>
+          </article>
+          <article class="module-card module-secondary hud-panel" onclick="openSettings('script')">
+            <div class="module-icon module-icon-script"></div>
+            <span class="module-tag">剧本</span>
+            <h3>剧本创作</h3>
+            <p>输入设定 → 生成剧本结构 → 分场创作与审改。</p>
+            <div class="module-action">开始创作 <span>→</span></div>
+          </article>
+          <article class="module-card module-wide hud-panel" onclick="openHub('models')">
+            <h3>设置中心</h3>
+            <p>模型 API、分阶段调度、Skills、题材、Loop 流程与自动写作策略。</p>
+            <div class="module-action">打开设置 <span>→</span></div>
+          </article>
+          <article class="module-card module-wide hud-panel" onclick="homeTab('flow')">
+            <h3>完整流程说明</h3>
+            <p>建书、章纲审计、逐章写作、人物面板与自动连写的六步说明。</p>
+            <div class="module-action">查看流程 <span>→</span></div>
+          </article>
+        </div>
+      </div>
+
+      <div id="home-flow" class="hidden">
+        <div class="pipeline hud-panel">
+          <h2 class="pipeline-title">创作流程</h2>
+          <div class="pipeline-track">
+            <div class="pipe-node"><span class="pipe-num">00</span><div class="pipe-body"><h4>系统配置</h4><p>注入 API 密钥与模型，配置存于本机 data/config.json</p></div></div>
+            <div class="pipe-node"><span class="pipe-num">01</span><div class="pipe-body"><h4>建书 + 生成设定</h4><p>故事框架、分卷卷纲、角色卡、伏笔与文风，可逐项编辑或重生成</p></div></div>
+            <div class="pipe-node"><span class="pipe-num">02</span><div class="pipe-body"><h4>章纲规划 + 结构审计</h4><p>每 5 章一组，自动结构审计，不合格自动修订</p></div></div>
+            <div class="pipe-node"><span class="pipe-num">03</span><div class="pipe-body"><h4>逐章写作 + 连贯性审计</h4><p>按章纲写正文，自动审改至通过；手动模式可逐章确认</p></div></div>
+            <div class="pipe-node"><span class="pipe-num">04</span><div class="pipe-body"><h4>人物面板</h4><p>游戏/LitRPG 题材维护等级、属性、装备，每章注入上下文</p></div></div>
+            <div class="pipe-node"><span class="pipe-num">05</span><div class="pipe-body"><h4>自动连写 + 断点续写</h4><p>后台持续写作，关页面不中断，随时刷新看进度</p></div></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══ 工作区 ═══ -->
+    <section id="workspace" class="hidden view-ops">
+      <div class="ops-grid" id="ws-layout">
+        <div class="ops-center">
+          <div id="view-project">
+            <div class="ops-title-bar">
+              <span class="ops-label">当前项目</span>
+              <h1 id="pj-title" class="ops-title"></h1>
+            </div>
+            <div class="task-line" id="pj-task"></div>
+            <div class="action-bar tabs" id="pj-actions"></div>
+            <div class="chapter-table chapters" id="pj-chapters"></div>
+          </div>
+          <div id="view-chapter" class="hidden">
+            <button type="button" class="backlink" onclick="showProject()">← 返回章节目录</button>
+            <h2 id="cd-title" class="cd-title"></h2>
+            <div class="action-bar tabs" id="cd-actions"></div>
+            <div class="stage" id="stage"></div>
+            <div class="reader hud-panel">
+              <div class="body" id="ch-body"></div>
+            </div>
+            <div class="toolbar">
+              <button type="button" id="btn-pause" class="danger hidden" onclick="pauseWrite()">暂停生成</button>
+            </div>
+            <div id="cd-audit"></div>
+          </div>
+        </div>
+
+        <aside class="intel-panel" id="ws-context">
+          <div class="intel-head">
+            <span class="intel-label">创作参考</span>
+            <button type="button" class="btn-icon intel-collapse" onclick="toggleContextPanel()" title="收起">◂</button>
+          </div>
+          <nav class="intel-tabs" id="ctx-tabs" aria-label="参考分类">
+            <button type="button" class="intel-tab sel" data-ctx="struct" onclick="switchCtxTab('struct')">结构</button>
+            <button type="button" class="intel-tab" data-ctx="roles" onclick="switchCtxTab('roles')">角色</button>
+            <button type="button" class="intel-tab" data-ctx="rules" onclick="switchCtxTab('rules')">规则</button>
+            <button type="button" class="intel-tab hidden" data-ctx="panel" id="ctx-tab-panel" onclick="switchCtxTab('panel')">面板</button>
+          </nav>
+          <div class="intel-body" id="cards"></div>
+        </aside>
+      </div>
+      <button type="button" class="primary intel-fab ctx-expand-fab" id="ctx-expand-fab" onclick="toggleContextPanel(true)">展开参考面板</button>
+    </section>
+  </main>
+</div>
+
+<!-- ═══ 模态：初始设定 ═══ -->
+<div class="scrim" id="m-settings"><div class="modal hud-panel">
+  <div class="modal-head">
+    <h2 id="settings-title">长篇小说 · 初始设定</h2>
+    <button type="button" class="modal-x" title="关闭" onclick="closeSettingsModal()">×</button>
+  </div>
   <label>书名</label><input id="f-title" placeholder="例如：开局毒妈，BOSS的血怎么又满了" />
   <div class="row">
     <div><label>题材</label>
@@ -294,8 +190,10 @@
         <option value="progression">升级流</option><option value="cultivation">修真</option>
         <option value="sci-fi">科幻</option><option value="horror">恐怖</option>
         <option value="isekai">异世界</option><option value="romantasy">浪漫奇幻</option>
-        <option value="system-apocalypse">系统末世</option><option value="tower-climber">爬塔</option>
-        <option value="dungeon-core">地下城核心</option><option value="cozy">治愈日常</option>
+        <option value="system-apocalypse">系统末世</option>
+        <option value="tower-climber">爬塔</option>
+        <option value="dungeon-core">地下城核心</option>
+        <option value="cozy">治愈日常</option>
       </select>
     </div>
     <div><label>目标章数</label><input id="f-target" type="number" value="200" /></div>
@@ -303,249 +201,281 @@
   </div>
   <label>初始设定（世界观、金手指、主角、风格等，越具体越好）</label>
   <textarea id="f-settings" placeholder="描述你的故事设定：世界观、主角、金手指机制、风格基调、双线结构等……"></textarea>
+  <div id="hot-guide-wrap" class="hidden hot-guide-block">
+    <div class="toolbar hot-toolbar">
+      <button type="button" id="btn-hot-guide" onclick="runHotNovelGuide()">热点小说内容指导</button>
+      <button type="button" id="btn-hot-fill" class="primary hidden" onclick="runHotNovelFill()">AI 一键生成</button>
+      <span class="hint" id="hot-guide-hint">先出约150字综述，再选男频/女频与热点类型，一键生成书名与设定</span>
+    </div>
+    <div id="hot-guide-progress" class="genprog hidden"></div>
+    <div id="hot-guide-overview" class="hot-box hidden"></div>
+    <div id="hot-guide-tabs-wrap" class="hidden">
+      <div class="field-hint">按频向选择</div>
+      <div id="hot-guide-channel-tabs" class="tabs"></div>
+      <div class="hot-type-tabs">
+        <div class="field-hint">热点类型</div>
+        <div id="hot-guide-type-tabs" class="tabs"></div>
+      </div>
+    </div>
+    <div id="hot-guide-out" class="hot-box hidden"></div>
+  </div>
   <div class="toolbar">
-    <button onclick="closeModal('m-settings')">取消</button>
-    <button class="primary" id="btn-gen" onclick="genFoundation()">生成大纲与世界观</button>
+    <button type="button" onclick="closeSettingsModal()">关闭</button>
+    <button type="button" id="btn-gen-cancel" class="danger hidden" onclick="cancelGenFoundation()">取消生成</button>
+    <button type="button" class="primary" id="btn-gen" onclick="genFoundation()">生成大纲与世界观</button>
   </div>
   <div id="gen-progress" class="genprog hidden"></div>
 </div></div>
 
-<!-- 近5章章纲确认弹框 -->
-<div class="scrim" id="m-outline"><div class="modal">
-  <h2>确认章纲 <span class="badge" id="outline-range">近 5 章</span></h2>
-  <p style="color:var(--muted);font-size:13px;margin:.3em 0">先看每章一句话总结，展开可看梗概。可逐章编辑，或在下方给出整体意见重新生成。确认后开始写作。</p>
+<div class="scrim" id="m-outline"><div class="modal hud-panel">
+  <div class="modal-head">
+    <h2>确认章纲 <span class="badge" id="outline-range">近 5 章</span></h2>
+    <button type="button" class="modal-x" onclick="closeModal('m-outline')">×</button>
+  </div>
+  <p class="modal-desc">先看每章一句话总结，展开可看梗概。可逐章编辑，或在下方给出整体意见重新生成。</p>
   <div id="outline-progress" class="genprog hidden"></div>
   <div id="outline-audit-log"></div>
   <div id="outline-list"></div>
-  <label>整体修改意见（重排节奏 / 加爆点 / 调整走向等）：</label>
+  <label>整体修改意见：</label>
   <textarea id="outline-feedback" placeholder="例如：第2章太平，提前引入对手；第4章加一个反转爆点……"></textarea>
   <div class="toolbar">
-    <button id="btn-outline-autocorrect" onclick="autocorrectOutlines()" title="让 AI 先按审计标准自查自改章纲，改完你再审">🔧 自动纠正</button>
-    <button id="btn-outline-regen" onclick="regenOutlines()">按意见重新生成章纲</button>
-    <button class="primary" id="btn-outline-confirm" onclick="confirmOutlines()">✅ 确认章纲，逐章写作</button>
-    <button id="btn-outline-auto" onclick="confirmOutlines(true)" title="不再逐章确认，直接写到完本">🚀 直接自动写到完本</button>
+    <button type="button" id="btn-outline-autocorrect" onclick="autocorrectOutlines()">自动纠正</button>
+    <button type="button" id="btn-outline-regen" onclick="regenOutlines()">按意见重新生成</button>
+    <button type="button" class="primary" id="btn-outline-confirm" onclick="confirmOutlines()">确认章纲，逐章写作</button>
+    <button type="button" id="btn-outline-auto" onclick="confirmOutlines(true)">直接自动写到完本</button>
   </div>
-  <p class="hint" style="margin-top:8px">自动模式下不会再打断你确认章纲；已确认的这几章仍会被遵循，之后各章由引擎依据卷纲自动推进。</p>
+  <p class="hint">自动模式下不会再打断你确认章纲。</p>
 </div></div>
 
-<!-- 大纲确认弹框 -->
-<div class="scrim" id="m-foundation"><div class="modal">
-  <h2>确认设定 <span class="badge">大纲 / 世界观 / 人设 / 伏笔</span></h2>
+<div class="scrim" id="m-foundation"><div class="modal hud-panel">
+  <div class="modal-head">
+    <h2>确认设定 <span class="badge">大纲 / 世界观 / 人设 / 伏笔</span></h2>
+    <button type="button" class="modal-x" onclick="closeModal('m-foundation')">×</button>
+  </div>
   <div class="foundation" id="foundation-view"></div>
-  <label>不满意？输入修订意见，重新生成设定：</label>
-  <textarea id="f-revise" placeholder="例如：主角动机再强一点；世界观加入XX规则；把金手指改成……"></textarea>
+  <label>修订意见：</label>
+  <textarea id="f-revise" placeholder="例如：主角动机再强一点；世界观加入XX规则……"></textarea>
   <div class="toolbar">
-    <button id="btn-revise-fnd" onclick="reviseFoundation()">按意见重生成设定</button>
-    <button class="primary" onclick="startWriting()">✅ 确认设定，开始写作</button>
+    <button type="button" id="btn-revise-fnd" onclick="reviseFoundation()">按意见重生成设定</button>
+    <button type="button" class="primary" onclick="startWriting()">确认设定，开始写作</button>
   </div>
 </div></div>
 
-<!-- 章节确认弹框（步骤6/7/8 共用，动态渲染） -->
-<div class="scrim" id="m-confirm"><div class="modal">
-  <h2 id="confirm-title">第 1 章生成完成</h2>
-  <div class="body" id="confirm-body" style="font-family:var(--serif);font-size:15px;line-height:1.95;white-space:pre-wrap;max-height:44vh;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:14px;background:#fbfcfb"></div>
+<div class="scrim" id="m-confirm"><div class="modal hud-panel">
+  <div class="modal-head">
+    <h2 id="confirm-title">第 1 章生成完成</h2>
+    <button type="button" class="modal-x" onclick="closeModal('m-confirm')">×</button>
+  </div>
+  <div class="body confirm-preview" id="confirm-body"></div>
   <div class="tabs" id="confirm-tabs"></div>
   <div id="confirm-input-wrap">
     <textarea id="confirm-input" placeholder="输入你的修订/重写意见……"></textarea>
     <div class="hint" id="confirm-hint"></div>
   </div>
   <div class="toolbar">
-    <button class="primary" id="confirm-submit" onclick="submitConfirm()">提交</button>
+    <button type="button" class="primary" id="confirm-submit" onclick="submitConfirm()">提交</button>
   </div>
 </div></div>
 
-<!-- 输入记录弹框 -->
-<div class="scrim" id="m-logs"><div class="modal">
-  <h2>输入记录 <span class="badge">你发送过的设定与意见</span></h2>
-  <div id="logs-body" style="margin-top:10px"></div>
-  <div class="toolbar"><button onclick="closeModal('m-logs')">关闭</button></div>
+<div class="scrim" id="m-logs"><div class="modal hud-panel">
+  <div class="modal-head">
+    <h2>输入记录 <span class="badge">设定与意见</span></h2>
+    <button type="button" class="modal-x" onclick="closeModal('m-logs')">×</button>
+  </div>
+  <div id="logs-body"></div>
+  <div class="toolbar"><button type="button" onclick="closeModal('m-logs')">关闭</button></div>
 </div></div>
 
-<!-- 设置中心：左菜单 + 右内容 -->
-<div class="scrim" id="m-hub"><div class="modal">
-  <div class="hub-head"><h2>设置</h2><span class="hub-x" onclick="closeModal('m-hub')">✕</span></div>
+<div class="scrim" id="m-hub"><div class="modal modal-hub hud-panel">
+  <div class="hub-head"><h2>设置</h2><button type="button" class="hub-x" onclick="closeModal('m-hub')">×</button></div>
   <div class="hub-body">
-    <div class="hub-nav">
-      <div class="hub-navi sel" data-sec="models" onclick="hubNav('models')">🖥 模型服务</div>
-      <div class="hub-navi" data-sec="stages" onclick="hubNav('stages')">🧩 模型配置</div>
-      <div class="hub-navi" data-sec="skills" onclick="hubNav('skills')">🌀 Skills 技能管理</div>
-      <div class="hub-navi" data-sec="genres" onclick="hubNav('genres')">🏷 题材设置</div>
-      <div class="hub-navi" data-sec="writing" onclick="hubNav('writing')">✍ 自动写作配置</div>
-    </div>
+    <nav class="hub-nav">
+      <button type="button" class="hub-navi sel" data-sec="models" onclick="hubNav('models')">模型服务</button>
+      <button type="button" class="hub-navi" data-sec="stages" onclick="hubNav('stages')">模型配置</button>
+      <button type="button" class="hub-navi" data-sec="skills" onclick="hubNav('skills')">Skills</button>
+      <button type="button" class="hub-navi" data-sec="genres" onclick="hubNav('genres')">题材</button>
+      <button type="button" class="hub-navi" data-sec="writing" onclick="hubNav('writing')">自动写作</button>
+      <button type="button" class="hub-navi" data-sec="loop" onclick="hubNav('loop')">Loop</button>
+    </nav>
     <div class="hub-content">
-
-      <!-- 模型服务 -->
       <div id="hub-models" class="hub-sec">
         <h3 class="sec-t">模型服务</h3>
-        <p class="sec-d">密钥只保存在本机 <code>data/config.json</code>（已 .gitignore 忽略），不会上传或随仓库提交。也可用环境变量 <code>NOVEL_API_KEY</code> / <code>OPENAI_API_KEY</code> 注入。</p>
-        <label>API 密钥 <span style="color:#c0392b">*必填</span> <span id="cfg-key-state" style="color:var(--muted);font-weight:400"></span></label>
-        <div style="position:relative">
-          <input id="cfg-key" type="password" placeholder="留空则不修改已保存的密钥" autocomplete="off" style="padding-right:38px" />
-          <span onclick="toggleKeyEye()" title="显示/隐藏" style="position:absolute;right:10px;top:9px;cursor:pointer;color:var(--muted);user-select:none">👁</span>
+        <p class="sec-d">密钥只保存在本机 <code>data/config.json</code>，不会上传。</p>
+        <label>API 密钥 <span class="req">*必填</span> <span id="cfg-key-state" class="field-meta"></span></label>
+        <div class="input-eye-wrap">
+          <input id="cfg-key" type="password" placeholder="请输入 API 密钥" autocomplete="off" />
+          <button type="button" class="eye-btn" onclick="toggleKeyEye()" title="显示/隐藏">◉</button>
         </div>
-        <label>请求地址（Base URL） <span style="color:#c0392b">*必填</span></label>
+        <label>请求地址（Base URL） <span class="req">*必填</span></label>
         <input id="cfg-baseurl" placeholder="https://api.deepseek.com" />
-        <div style="font-size:12px;color:var(--muted);margin-top:4px">示例：https://api.deepseek.com（任意 OpenAI 兼容接口均可）</div>
-        <div style="display:flex;align-items:center;margin:16px 0 6px">
-          <span style="font-size:14px;color:var(--acc-d);font-weight:700">模型设置</span>
-          <button style="margin-left:auto" onclick="openModelEdit(null)">＋ 手动添加</button>
+        <p class="field-hint">任意 OpenAI 兼容接口均可</p>
+        <div class="sec-head-row">
+          <span class="sec-head-title">模型列表</span>
+          <button type="button" onclick="openModelEdit(null)">+ 添加</button>
         </div>
         <div id="cfg-model-list"></div>
-        <div class="row" style="margin-top:14px">
-          <div><label>快模型（正文/审查默认）</label><select id="cfg-fast"></select></div>
-          <div><label>强模型（大纲/审计/修订默认）</label><select id="cfg-strong"></select></div>
+        <div class="row">
+          <div><label>快模型</label><select id="cfg-fast"></select></div>
+          <div><label>强模型</label><select id="cfg-strong"></select></div>
           <div><label>温度</label><input id="cfg-temp" type="number" step="0.1" value="0.7" /></div>
         </div>
-        <div class="toolbar" style="margin-top:16px">
-          <button class="primary" onclick="saveConfig()">保存模型服务</button>
-          <span class="hint" id="cfg-hint" style="margin:0"></span>
+        <div class="toolbar">
+          <button type="button" class="primary" onclick="saveConfig()">保存</button>
+          <span class="hint" id="cfg-hint"></span>
         </div>
       </div>
-
-      <!-- 分阶段模型配置 -->
       <div id="hub-stages" class="hub-sec hidden">
-        <h3 class="sec-t">模型配置</h3>
-        <p class="sec-d">不同写作阶段可用不同模型：大纲/审计/修订用更强的模型（质量更高），正文/审查用更快的模型（更省更快）。可用模型列表在「模型服务」里维护。</p>
+        <h3 class="sec-t">分阶段模型</h3>
+        <p class="sec-d">大纲/审计用强模型，正文/审查用快模型。</p>
         <div id="model-rows"></div>
-        <div class="toolbar" style="margin-top:14px">
-          <button class="primary" onclick="saveModelConfig()">保存分阶段配置</button>
-          <span class="hint" id="stage-hint" style="margin:0"></span>
+        <div class="toolbar">
+          <button type="button" class="primary" onclick="saveModelConfig()">保存</button>
+          <span class="hint" id="stage-hint"></span>
         </div>
       </div>
-
-      <!-- Skills 技能管理 -->
       <div id="hub-skills" class="hub-sec hidden">
-        <h3 class="sec-t">Skills 技能管理</h3>
-        <p class="sec-d">全部技能都展示在这里，均可查看与修改（存于 <code>data/skills/</code>）。覆盖<strong>长篇小说</strong>与<strong>剧本创作</strong>两条线（不含开放世界/影游）。写作流程组改完保存立即生效；自定义组会自动注入建书/大纲/正文/审计/修订。内置技能删除后会自动恢复默认。</p>
+        <h3 class="sec-t">Skills 技能</h3>
+        <p class="sec-d">长篇小说与剧本各有一套技能组，写作时按类型加载。</p>
         <div class="sk-grid">
           <div>
-            <input id="sk-search" placeholder="搜索技能名…" oninput="renderSkillList()" style="margin-bottom:8px" />
-            <button style="width:100%;margin-bottom:8px" onclick="newSkill()">＋ 新建技能</button>
+            <input id="sk-search" placeholder="搜索…" oninput="renderSkillList()" />
+            <button type="button" class="sk-new" onclick="newSkill()">+ 新建</button>
             <div class="sk-list" id="sk-list"></div>
           </div>
           <div>
-            <label>技能名称</label>
-            <input id="sk-name" placeholder="例如：文风规范" />
+            <label>名称</label><input id="sk-name" placeholder="文风规范" />
             <label>内容（Markdown）</label>
-            <textarea id="sk-content" style="min-height:280px;font-family:var(--serif)" placeholder="在此编写技能内容…"></textarea>
-            <div class="toolbar" style="margin-top:10px">
-              <button class="primary" onclick="saveSkill()">保存</button>
-              <button id="sk-reset" class="hidden" onclick="resetSkill()">↺ 恢复默认</button>
-              <button class="danger" onclick="deleteSkill()">删除</button>
-              <span class="hint" id="sk-hint" style="margin:0"></span>
+            <textarea id="sk-content" class="sk-editor" placeholder="技能内容…"></textarea>
+            <div class="toolbar">
+              <button type="button" class="primary" onclick="saveSkill()">保存</button>
+              <button type="button" id="sk-reset" class="hidden" onclick="resetSkill()">恢复默认</button>
+              <button type="button" class="danger" onclick="deleteSkill()">删除</button>
+              <span class="hint" id="sk-hint"></span>
             </div>
           </div>
         </div>
       </div>
-
-      <!-- 题材设置 -->
       <div id="hub-genres" class="hub-sec hidden">
         <h3 class="sec-t">题材设置</h3>
-        <p class="sec-d">每个题材除了标识与显示名，还应有一段<strong>题材说明文本</strong>（流派套路、禁忌、面板建议等）。建书时会把当前题材的说明注入生成上下文。右侧可直接编辑说明。</p>
+        <p class="sec-d">建书时注入题材说明文本。</p>
         <div class="sk-grid">
           <div>
             <div id="gn-list" class="sk-list"></div>
-            <div class="toolbar" style="margin-top:8px">
-              <button onclick="addGenre()">＋ 添加题材</button>
-              <button class="primary" onclick="saveGenres()">保存全部</button>
+            <div class="toolbar">
+              <button type="button" onclick="addGenre()">+ 添加</button>
+              <button type="button" class="primary" onclick="saveGenres()">保存</button>
             </div>
-            <span class="hint" id="gn-hint" style="margin:0;display:block;margin-top:6px"></span>
+            <span class="hint" id="gn-hint"></span>
           </div>
           <div>
-            <div class="row" style="margin-bottom:8px">
-              <div><label>题材标识</label><input id="gn-id" placeholder="如 xianxia" oninput="syncGenreField('id')" /></div>
-              <div><label>显示名称</label><input id="gn-label" placeholder="如 仙侠" oninput="syncGenreField('label')" /></div>
+            <div class="row">
+              <div><label>标识</label><input id="gn-id" placeholder="xianxia" oninput="syncGenreField('id')" /></div>
+              <div><label>名称</label><input id="gn-label" placeholder="仙侠" oninput="syncGenreField('label')" /></div>
             </div>
-            <label style="display:flex;align-items:center;gap:8px;margin:6px 0 10px">
-              <input type="checkbox" id="gn-panel" style="width:auto" onchange="syncGenreField('panel')" /> 启用人物属性面板
-            </label>
-            <label>题材说明文本（建书时注入）</label>
-            <textarea id="gn-guide" rows="14" placeholder="写清该题材的核心套路、禁忌、节奏与数值/面板要求…" oninput="syncGenreField('guide')" style="min-height:260px"></textarea>
-            <div class="toolbar" style="margin-top:8px">
-              <button onclick="delSelectedGenre()" style="color:#c0392b">删除当前题材</button>
-              <button class="primary" onclick="saveGenres()">保存</button>
+            <label class="check-label"><input type="checkbox" id="gn-panel" onchange="syncGenreField('panel')" /> 启用人物面板</label>
+            <label>题材说明</label>
+            <textarea id="gn-guide" rows="14" placeholder="套路、禁忌、节奏要求…" oninput="syncGenreField('guide')"></textarea>
+            <div class="toolbar">
+              <button type="button" class="danger" onclick="delSelectedGenre()">删除</button>
+              <button type="button" class="primary" onclick="saveGenres()">保存</button>
             </div>
           </div>
         </div>
       </div>
-
-      <!-- 自动写作配置（后台本地任务） -->
       <div id="hub-writing" class="hub-sec hidden">
-        <h3 class="sec-t">自动写作配置</h3>
-        <p class="sec-d">这里管的是<strong>后台本地任务</strong>怎么跑、怎么停——不是建书时的章数/字数（那是在「开始创作」里定的）。任务跑在本机 <code>server.mjs</code> 进程里，<strong>关掉网页也会继续</strong>；关掉的是浏览器标签，不是 Node 服务。</p>
-
-        <h4 style="margin:14px 0 8px;font-size:14px">停止条件</h4>
+        <h3 class="sec-t">自动写作</h3>
+        <p class="sec-d">后台本地任务配置，关网页仍继续。</p>
+        <h4 class="sec-h4">停止条件</h4>
         <div class="row">
-          <div><label>写到第 N 章停止（0 = 用该书建书时的目标章数）</label><input id="wr-stop-ch" type="number" min="0" placeholder="0" /></div>
-          <div><label>连续运行满 N 小时停止（0 = 不限时）</label><input id="wr-stop-hours" type="number" min="0" step="0.5" placeholder="0" /></div>
+          <div><label>写到第 N 章（0=目标章数）</label><input id="wr-stop-ch" type="number" min="0" placeholder="0" /></div>
+          <div><label>运行 N 小时（0=不限）</label><input id="wr-stop-hours" type="number" min="0" step="0.5" placeholder="0" /></div>
         </div>
-        <label style="display:flex;align-items:center;gap:8px;margin:10px 0 6px">
-          <input type="checkbox" id="wr-stop-token" style="width:auto" /> API 报 Token / 余额不足时立即停止
-        </label>
-        <label style="display:flex;align-items:center;gap:8px;margin:0 0 12px">
-          <input type="checkbox" id="wr-stop-quota" style="width:auto" /> 配额 / 预扣费失败等额度错误时立即停止
-        </label>
-
-        <h4 style="margin:14px 0 8px;font-size:14px">流水线（可选）</h4>
+        <label class="check-label"><input type="checkbox" id="wr-stop-token" /> Token 不足时停止</label>
+        <label class="check-label"><input type="checkbox" id="wr-stop-quota" /> 配额失败时停止</label>
+        <h4 class="sec-h4">流水线</h4>
         <div class="row">
-          <div><label>章纲结构审计最多修订轮数（0-5）</label><input id="wr-oaudit" type="number" min="0" max="5" /></div>
-          <div><label>正文自动审改最多轮数（1-8）</label><input id="wr-review" type="number" min="1" max="8" /></div>
+          <div><label>章纲审计轮数 (0-5)</label><input id="wr-oaudit" type="number" min="0" max="5" /></div>
+          <div><label>正文审改轮数 (1-8)</label><input id="wr-review" type="number" min="1" max="8" /></div>
         </div>
-
-        <div class="toolbar" style="margin-top:14px">
-          <button class="primary" onclick="saveWritingConfig()">保存自动写作配置</button>
-          <span class="hint" id="wr-hint" style="margin:0"></span>
+        <div class="toolbar">
+          <button type="button" class="primary" onclick="saveWritingConfig()">保存</button>
+          <span class="hint" id="wr-hint"></span>
         </div>
-
-        <h4 style="margin:22px 0 8px;font-size:14px">怎么用后台任务</h4>
-        <div class="foundation" style="margin:0">
-          <section><h4>关网页也能跑</h4><div style="padding:12px 14px;line-height:1.8;font-size:13px">
-            1. 先启动服务：<code>npm start</code>（或 <code>node server.mjs</code>），保持这个终端/进程不要关。<br>
-            2. 浏览器里打开作品 → 点「自动写到完本」；或命令行：<code>npm run auto:start</code><br>
-            3. 此时可以关掉浏览器标签，任务仍在本机 Node 里跑。<br>
-            4. 查进度：<code>npm run auto:status</code>　停止：<code>npm run auto:stop</code>
-          </div></section>
-          <section><h4>常用命令</h4><div style="padding:12px 14px;line-height:1.8;font-size:13px">
-            <pre style="margin:0;white-space:pre-wrap;font-size:12px">npm start                 # 启动本机服务（关网页也要留着）
-npm run auto:start        # 后台开始自动连写（最近一本）
-npm run auto:status       # 看进度
-npm run auto:stop         # 停止当前自动任务
-npm run auto:watch        # 看门狗：卡住/异常时尝试自愈
-node auto-ctl.mjs stop "书名目录"   # 指定某一本停止</pre>
-          </div></section>
-          <section><h4>防止电脑休眠（否则任务会停）</h4><div style="padding:12px 14px;line-height:1.8;font-size:13px">
-            Windows（管理员 PowerShell，防休眠至你取消）：<br>
-            <code>powershell -File scripts/keep-awake-win.ps1</code><br>
-            取消：<code>powershell -File scripts/keep-awake-win.ps1 -Off</code><br><br>
-            macOS：<br>
-            <code>bash scripts/keep-awake-mac.sh</code>（运行期间不休眠；Ctrl+C 结束）<br><br>
-            或系统设置里临时关闭「睡眠 / 盖上盖子睡眠」。更完整说明见 <code>docs/auto-writing.md</code>。
-          </div></section>
+        <h4 class="sec-h4">下载脚本</h4>
+        <p class="sec-d">关网页也能控任务。</p>
+        <div class="row">
+          <div><label>系统</label><select id="wr-script-os" onchange="refreshScriptKinds()"><option value="windows">Windows</option><option value="mac">macOS</option></select></div>
+          <div><label>用途</label><select id="wr-script-kind"></select></div>
+        </div>
+        <label>书目录名（可选）</label>
+        <input id="wr-script-book" placeholder="留空 = 最近一本" />
+        <div class="toolbar">
+          <button type="button" class="ghost" onclick="fillScriptBookFromCurrent()">填入当前书</button>
+          <button type="button" class="primary" onclick="downloadAutoScript()">下载</button>
+          <span class="hint" id="wr-script-hint"></span>
+        </div>
+        <div class="foundation hub-foundation">
+          <section><h4>脚本用法</h4><div id="wr-script-howto" class="sec-block"></div></section>
+          <section><h4>关网页也能跑</h4><div class="sec-block">终端 <code>npm start</code> 保持运行 → 网页或脚本启动自动连写 → 关标签不影响。</div></section>
         </div>
       </div>
-
+      <div id="hub-loop" class="hub-sec hidden">
+        <h3 class="sec-t">Loop 流程</h3>
+        <p class="sec-d">调整建书 / 自动连写 / 人工写作节点顺序。</p>
+        <div class="loop-mode-tabs" id="loop-mode-tabs">
+          <button type="button" class="loop-mode-tab sel" data-mode="foundation" onclick="switchLoopMode('foundation')">建书</button>
+          <button type="button" class="loop-mode-tab" data-mode="auto" onclick="switchLoopMode('auto')">自动连写</button>
+          <button type="button" class="loop-mode-tab" data-mode="manual" onclick="switchLoopMode('manual')">人工写作</button>
+        </div>
+        <div id="loop-list" class="loop-list"></div>
+        <div class="loop-add">
+          <select id="loop-add-select"></select>
+          <button type="button" onclick="addLoopNode()">+ 添加节点</button>
+          <button type="button" class="ghost" onclick="resetLoopMode()">恢复默认</button>
+        </div>
+        <div class="toolbar">
+          <button type="button" class="primary" onclick="saveLoopConfig()">保存</button>
+          <span class="hint" id="loop-hint"></span>
+        </div>
+      </div>
     </div>
   </div>
 </div></div>
 
-<!-- 编辑模型弹框（浮于设置中心之上） -->
-<div class="scrim" id="m-model-edit"><div class="modal" style="max-width:520px">
-  <h2 id="me-title">编辑模型</h2>
-  <label>显示名称</label>
-  <input id="me-label" placeholder="例如：DeepSeek V4 Pro" />
-  <label>模型标识</label>
-  <input id="me-id" placeholder="例如：deepseek-v4-pro" />
-  <label>模型类型</label>
-  <select id="me-type"><option value="text">text（文本）</option><option value="reasoning">reasoning（推理）</option></select>
+<div class="scrim" id="m-model-edit"><div class="modal hud-panel modal-sm">
+  <div class="modal-head">
+    <h2 id="me-title">编辑模型</h2>
+    <button type="button" class="modal-x" onclick="closeModal('m-model-edit')">×</button>
+  </div>
+  <label>显示名称</label><input id="me-label" placeholder="DeepSeek V4 Pro" />
+  <label>模型标识</label><input id="me-id" placeholder="deepseek-v4-pro" />
+  <label>类型</label><select id="me-type"><option value="text">text</option><option value="reasoning">reasoning</option></select>
   <label>深度思考</label>
-  <div style="margin-top:4px">
-    <label style="display:inline-flex;align-items:center;gap:5px;margin:0 18px 0 0;color:var(--ink);font-size:14px"><input type="radio" name="me-think" value="1" style="width:auto" checked /> 支持</label>
-    <label style="display:inline-flex;align-items:center;gap:5px;margin:0;color:var(--ink);font-size:14px"><input type="radio" name="me-think" value="0" style="width:auto" /> 不支持</label>
+  <div class="radio-row">
+    <label class="check-label"><input type="radio" name="me-think" value="1" checked /> 支持</label>
+    <label class="check-label"><input type="radio" name="me-think" value="0" /> 不支持</label>
   </div>
-  <div class="toolbar" style="margin-top:18px">
-    <button onclick="closeModal('m-model-edit')">取消</button>
-    <button class="primary" onclick="saveModelEdit()">确认</button>
+  <div class="toolbar">
+    <button type="button" onclick="closeModal('m-model-edit')">取消</button>
+    <button type="button" class="primary" onclick="saveModelEdit()">确认</button>
   </div>
+</div></div>
+
+<div class="scrim" id="m-error-lookup"><div class="modal hud-panel modal-sm">
+  <div class="modal-head">
+    <h2>报错自查</h2>
+    <button type="button" class="modal-x" onclick="closeModal('m-error-lookup')">×</button>
+  </div>
+  <p class="modal-desc">粘贴报错码或关键词，如 <code>接口不存在 [E109]</code></p>
+  <div class="toolbar toolbar-search">
+    <input id="err-lookup-input" placeholder="报错码 / 关键词" onkeydown="if(event.key==='Enter')queryErrorLookup()" />
+    <button type="button" class="primary" onclick="queryErrorLookup()">查询</button>
+  </div>
+  <div id="err-lookup-progress" class="genprog hidden"></div>
+  <div id="err-lookup-result"></div>
+  <details class="err-catalog"><summary>全部报错码</summary>
+    <div id="err-lookup-catalog"></div>
+  </details>
 </div></div>
 
 <script src="/app.js"></script>

@@ -1,7 +1,11 @@
+# ============================================================================
+# 网文小说生成器 · 作者 Jace
 # 防止 Windows 在自动写作期间休眠
 # 用法（建议管理员 PowerShell）：
 #   powershell -File scripts/keep-awake-win.ps1        # 开启
 #   powershell -File scripts/keep-awake-win.ps1 -Off   # 恢复默认
+# © Jace · MIT License
+# ============================================================================
 
 param(
   [switch]$Off

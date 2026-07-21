@@ -1,6 +1,9 @@
-// jace 开源小说生成器 — 自动写作工作台（后端）
-// Node http + SSE。写作 / 审计 / 状态由本仓库自研引擎 lib/engine.mjs 提供。
-// 许可：MIT（本仓库自包含，无第三方写作引擎依赖）。
+// ============================================================================
+// 网文小说生成器 · 作者 Jace
+// 自动写作工作台（后端）— Node http + SSE
+// 写作 / 审计 / 状态由本仓库自研引擎 lib/engine.mjs 提供
+// © Jace · MIT License
+// ============================================================================
 
 import { createServer } from "node:http";
 import { readFile, writeFile, mkdir, readdir, rm, stat } from "node:fs/promises";
@@ -9,16 +12,20 @@ import { join, extname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { PipelineRunner, createLLMClient, StateManager, chatCompletion, loadSkillPrompt, loadCustomSkillsBundle } from "./lib/engine.mjs";
-import { DEFAULT_PIPELINE_SKILLS, SKILL_GROUP_DEFS } from "./lib/default-skills.mjs";
+import { DEFAULT_LONGFORM_SKILLS, DEFAULT_SCRIPT_SKILLS, SKILL_GROUP_DEFS } from "./lib/default-skills.mjs";
+import { buildScript, listScripts } from "./lib/downloadable-scripts.mjs";
+import { fetchMarketRankings, parseHotGuideResult, parseHotFill } from "./lib/market-radar.mjs";
+import { lookupErrors, ERROR_CATALOG, appErr, appErrFromException } from "./lib/error-catalog.mjs";
+import { DEFAULT_LOOPS, LOOP_NODE_DEFS, normalizeLoops, hasLoopNode } from "./lib/loop-config.mjs";
+import { syncErrorCatalogJs } from "./scripts/sync-error-catalog.mjs";
 
 const HERE = fileURLToPath(new URL(".", import.meta.url));
 const DATA_ROOT = join(HERE, "data");             // 本工作台的项目数据根目录
 const PUBLIC = join(HERE, "public");
 const PORT = Number(process.env.NOVEL_PORT || 4568);
 
-// ---------- LLM 配置：用户自行配置，绝不硬编码密钥 ----------
-// 读取优先级：环境变量 > data/config.json > 内置默认（默认无密钥）。
-// 密钥只在服务端读取，永不写入日志、永不返回给前端。
+// ---------- LLM 配置：仅通过设置中心 data/config.json 保存密钥，不读环境变量 ----------
+// 密钥只在服务端读取，永不写入日志、永不返回给前端明文。
 const CONFIG_PATH = join(DATA_ROOT, "config.json");
 const DEFAULT_LLM = {
   // 默认对接 DeepSeek，但 baseUrl / 模型均可改，任意 OpenAI 兼容接口都能用
@@ -50,21 +57,29 @@ function loadLLMConfigRaw() {
   cfg.models = normModels(cfg.models);
   return cfg;
 }
-// 实际生效配置（叠加环境变量覆盖，便于容器 / CI 部署且不落盘密钥）
+// 实际生效配置（baseUrl/模型可用环境变量覆盖；apiKey 仅来自 config.json）
 function loadLLMConfig() {
   const cfg = loadLLMConfigRaw();
-  cfg.apiKey = process.env.NOVEL_API_KEY || process.env.OPENAI_API_KEY || cfg.apiKey || "";
+  cfg.apiKey = String(cfg.apiKey || "").trim();
   cfg.baseUrl = process.env.NOVEL_BASE_URL || cfg.baseUrl;
   if (process.env.NOVEL_MODEL) cfg.fastModel = process.env.NOVEL_MODEL;
   if (process.env.NOVEL_MODEL_STRONG) cfg.strongModel = process.env.NOVEL_MODEL_STRONG;
   return cfg;
 }
-function hasApiKey() { return !!loadLLMConfig().apiKey; }
+function hasApiKey() { return !!String(loadLLMConfigRaw().apiKey || "").trim(); }
+/** 密钥展示掩码（仅用于设置页反显，不含完整密钥） */
+function keyDisplayMask(k) {
+  const s = String(k || "").trim();
+  if (!s) return "";
+  if (s.length <= 6) return "•".repeat(s.length);
+  const mid = Math.min(Math.max(s.length - 5, 8), 20);
+  return `${s.slice(0, 3)}${"•".repeat(mid)}${s.slice(-2)}`;
+}
 
 function makeClient() {
   const cfg = loadLLMConfig();
   if (!cfg.apiKey) {
-    throw new Error("尚未配置 API Key：请在首页「设置」中填写，或设置环境变量 NOVEL_API_KEY / OPENAI_API_KEY。");
+    throw new Error("尚未配置 API Key：请在「设置 → 模型服务」中填写并保存。");
   }
   return createLLMClient({
     provider: "openai",
@@ -179,18 +194,20 @@ const DEFAULT_WRITING = {
   stopOnQuotaError: true,     // 配额/限流类致命错误时停止（与上一项可合并检测）
   outlineAuditMaxRounds: 2,   // 章纲结构审计最多修订轮数（流水线参数）
   autoReviewMaxRounds: 3,     // 正文自动审改最多轮数（流水线参数）
+  loops: { ...DEFAULT_LOOPS }, // 建书 / 自动连写 / 人工写作流程节点顺序
 };
 function loadWritingConfig() {
-  let c = { ...DEFAULT_WRITING };
+  let c = { ...DEFAULT_WRITING, loops: { ...DEFAULT_LOOPS } };
   try {
     if (existsSync(WRITING_CFG_PATH)) {
       const raw = JSON.parse(readFileSync(WRITING_CFG_PATH, "utf8"));
-      c = { ...c, ...raw };
+      c = { ...c, ...raw, loops: normalizeLoops(raw.loops ?? c.loops) };
     }
   } catch { /* ignore */ }
   // 兼容旧字段：不再用于自动任务，仅忽略
   delete c.targetChapters;
   delete c.chapterWordCount;
+  c.loops = normalizeLoops(c.loops);
   return c;
 }
 
@@ -200,27 +217,36 @@ function isFatalApiCreditError(err) {
   return /insufficient|quota|billing|余额|额度|token.*(不足|用尽|超)|exceeded.*token|payment|预扣费|402|403.*额度|credit|balance/.test(s);
 }
 
-// ---------- Skills：data/skills/<组>/*.md，全部可查看/编辑，pipeline 组运行时真实生效 ----------
+// ---------- Skills：data/skills/<longform|script|custom>/*.md ----------
 const SKILLS_DIR = join(DATA_ROOT, "skills");
 const SKILL_GROUPS = SKILL_GROUP_DEFS;
-const DEFAULT_SKILLS = { pipeline: DEFAULT_PIPELINE_SKILLS };
+const DEFAULT_SKILLS = { longform: DEFAULT_LONGFORM_SKILLS, script: DEFAULT_SCRIPT_SKILLS };
 const safeSkillName = (n) => String(n || "").replace(/[^\w.\- 一-鿿]/g, "").replace(/\.\.+/g, "").trim();
 const skillFilePath = (group, name) => join(SKILLS_DIR, group, `${safeSkillName(name)}.md`);
 
 async function seedSkills() {
-  const dir = join(SKILLS_DIR, "pipeline");
-  await mkdir(dir, { recursive: true }).catch(() => {});
-  for (const [name, content] of Object.entries(DEFAULT_PIPELINE_SKILLS)) {
-    const p = skillFilePath("pipeline", name);
-    if (!existsSync(p)) await writeFile(p, content, "utf8").catch(() => {});
+  for (const g of ["longform", "script"]) {
+    const dir = join(SKILLS_DIR, g);
+    await mkdir(dir, { recursive: true }).catch(() => {});
+    for (const [name, content] of Object.entries(DEFAULT_SKILLS[g])) {
+      const p = skillFilePath(g, name);
+      if (existsSync(p)) continue;
+      const legacy = join(SKILLS_DIR, "pipeline", `${safeSkillName(name)}.md`);
+      if (existsSync(legacy)) {
+        await writeFile(p, await readFile(legacy, "utf8"), "utf8").catch(() => {});
+      } else {
+        await writeFile(p, content, "utf8").catch(() => {});
+      }
+    }
   }
-  // 清理历史遗留的参考组（已不再使用）
-  await rm(join(SKILLS_DIR, "engine"), { recursive: true, force: true }).catch(() => {});
   await mkdir(join(SKILLS_DIR, "custom"), { recursive: true }).catch(() => {});
+  // 清理历史遗留组
+  await rm(join(SKILLS_DIR, "engine"), { recursive: true, force: true }).catch(() => {});
+  await rm(join(SKILLS_DIR, "pipeline"), { recursive: true, force: true }).catch(() => {});
 }
 
-function skillPrompt(name, vars = {}) {
-  return loadSkillPrompt(DATA_ROOT, name, vars);
+function skillPrompt(name, vars = {}, kind = "longform") {
+  return loadSkillPrompt(DATA_ROOT, name, vars, kind === "script" ? "script" : "longform");
 }
 
 // 引擎阶段（agent）名 → 中文友好名（用于进度反馈）
@@ -232,19 +258,19 @@ function friendlyAgent(agent) {
     "chapter-analyzer": "章节分析", radar: "市场雷达", composer: "上下文组装",
   })[agent] || agent;
 }
-// 引擎原始阶段日志 → 更口语化的中文（尽量保留原意，加图标）
+// 引擎原始阶段日志 → 更口语化的中文
 function friendlyStage(msg) {
   const map = [
-    [/architect|大纲|story_frame|骨架/i, "🏗 生成故事框架与世界观…"],
-    [/volume_map|卷纲/i, "🗺 规划分卷卷纲（OKR）…"],
-    [/role|角色/i, "👤 生成角色卡…"],
-    [/review|审核|reviewer|评分/i, "🔍 审核设定质量…"],
-    [/规划下一章|plan.*chapter|意图/i, "📋 规划本章章纲与意图…"],
-    [/compos|组装|上下文/i, "🧩 组装章节上下文…"],
-    [/audit|审计|连贯/i, "🔎 审计章节连贯性…"],
-    [/revis|修订/i, "✏ 按审计意见修订…"],
-    [/normaliz|字数/i, "📏 校准字数…"],
-    [/state|状态/i, "💾 更新故事状态…"],
+    [/architect|大纲|story_frame|骨架/i, "生成故事框架与世界观…"],
+    [/volume_map|卷纲/i, "规划分卷卷纲（OKR）…"],
+    [/role|角色/i, "生成角色卡…"],
+    [/review|审核|reviewer|评分/i, "审核设定质量…"],
+    [/规划下一章|plan.*chapter|意图/i, "规划本章章纲与意图…"],
+    [/compos|组装|上下文/i, "组装章节上下文…"],
+    [/audit|审计|连贯/i, "审计章节连贯性…"],
+    [/revis|修订/i, "按审计意见修订…"],
+    [/normaliz|字数/i, "校准字数…"],
+    [/state|状态/i, "更新故事状态…"],
   ];
   for (const [re, label] of map) if (re.test(msg)) return label;
   return msg;
@@ -262,7 +288,7 @@ function makeLogger(sink) {
 }
 
 // 构造一个 PipelineRunner（每次操作新建，注入本次的 externalContext / 流式回调）
-function makeRunner({ externalContext, onDelta, onStage, reviewMode, onRequest } = {}) {
+function makeRunner({ externalContext, onDelta, onStage, reviewMode, onRequest, onProgress } = {}) {
   return new PipelineRunner({
     client: makeClient(),
     model: MODEL,
@@ -270,10 +296,12 @@ function makeRunner({ externalContext, onDelta, onStage, reviewMode, onRequest }
     modelOverrides: loadModelConfig(), // 分阶段模型（字符串=换模型，复用同一客户端）
     externalContext,
     chapterReviewMode: reviewMode ?? "manual", // 逐步交互：默认手动分步，由前端显式触发审计
-    logger: makeLogger(onStage),
+    logger: makeLogger(onProgress ? undefined : onStage), // 有细粒度进度时避免 logger 重复刷屏
     onTextDelta: onDelta,
     onRequest, // 纯观测：把实际发给模型的 messages 冒出来（用于输入记录留存 prompt）
-    onStreamProgress: onStage
+    onProgress: onProgress
+      || (onStage ? (p) => onStage({ level: "progress", msg: p.msg, ...p }) : undefined),
+    onStreamProgress: (!onProgress && onStage)
       ? (p) => onStage({ level: "progress", msg: `streaming ${Math.round(p.elapsedMs / 1000)}s ${p.totalChars}字`, chars: p.totalChars })
       : undefined,
   });
@@ -323,7 +351,7 @@ function panelToText(p) {
 }
 // 用 LLM 从本章正文 + 当前面板，产出更新后的面板 JSON
 function buildPanelUpdatePrompt(panel, chapterContent) {
-  const sys = skillPrompt("人物面板更新");
+  const sys = skillPrompt("人物面板更新", {}, "longform");
   const user = `【当前人物面板 JSON】\n${JSON.stringify(panel, null, 2)}\n\n【本章正文】\n${(chapterContent || "").slice(0, 8000)}\n\n请直接输出更新后的人物面板 JSON（只要 JSON 本身）。`;
   return [{ role: "system", content: sys }, { role: "user", content: user }];
 }
@@ -409,7 +437,8 @@ async function saveChapterOutlines(bookId, outlines) {
 function buildOutlinePrompt(foundation, book, startN, count, feedback, prev, recentText) {
   const rolesTxt = (foundation.roles || []).map((r) => `【${r.tier}】${r.name}`).join("、");
   const isScript = book.kind === "script";
-  const sys = skillPrompt(isScript ? "分场大纲生成" : "章纲生成", { count, startN });
+  const kind = isScript ? "script" : "longform";
+  const sys = skillPrompt(isScript ? "分场大纲生成" : "章纲生成", { count, startN }, kind);
   const custom = loadCustomSkillsBundle(DATA_ROOT);
   const fmt = isScript
     ? `严格按以下格式输出，不要有多余文字：
@@ -480,15 +509,25 @@ async function generateOutlines(bookId, startN, count, feedback, onDelta) {
 }
 // ===== 大纲（章纲）结构审计 + 修订（你提供的 prompt，输出对齐生成格式）=====
 function buildOutlineAuditPrompt(foundation, book, startN, endN, prevOutlines, groupOutlines, recentText) {
-  const sys = skillPrompt("章纲结构审计", { count: endN - startN + 1, startN, endN });
-  const olText = groupOutlines.map((o) => `第${o.n}章 ${o.title}\n一句话：${o.summary}\n梗概：${o.detail}`).join("\n\n");
-  const user = `【小说总纲】\n${foundation.story_frame || "(空)"}\n\n【当前分卷大纲】\n${foundation.volume_map || "(空)"}\n\n【当前审查范围】第 ${startN}-${endN} 章（全书目标 ${book.targetChapters} 章）\n\n【前文上下文】\n${prevOutlines || "(无)"}\n${recentText ? `\n【前文章节正文】\n${recentText}` : ""}\n\n【当前${endN - startN + 1}章小纲】\n${olText}\n\n请审查并按格式输出。`;
+  const isScript = book.kind === "script";
+  const kind = isScript ? "script" : "longform";
+  const unit = isScript ? "场" : "章";
+  const sys = skillPrompt(isScript ? "分场大纲结构审计" : "章纲结构审计", { count: endN - startN + 1, startN, endN }, kind);
+  const olText = groupOutlines.map((o) => `第${o.n}${unit} ${o.title}\n一句话：${o.summary}\n梗概：${o.detail}`).join("\n\n");
+  const user = isScript
+    ? `【剧本总纲】\n${foundation.story_frame || "(空)"}\n\n【幕场结构】\n${foundation.volume_map || "(空)"}\n\n【当前审查范围】第 ${startN}-${endN} 场（目标 ${book.targetChapters} 场）\n\n【前文上下文】\n${prevOutlines || "(无)"}\n${recentText ? `\n【前场正文】\n${recentText}` : ""}\n\n【当前${endN - startN + 1}场大纲】\n${olText}\n\n请审查并按格式输出。`
+    : `【小说总纲】\n${foundation.story_frame || "(空)"}\n\n【当前分卷大纲】\n${foundation.volume_map || "(空)"}\n\n【当前审查范围】第 ${startN}-${endN} 章（全书目标 ${book.targetChapters} 章）\n\n【前文上下文】\n${prevOutlines || "(无)"}\n${recentText ? `\n【前文章节正文】\n${recentText}` : ""}\n\n【当前${endN - startN + 1}章小纲】\n${olText}\n\n请审查并按格式输出。`;
   return [{ role: "system", content: sys }, { role: "user", content: user }];
 }
 function buildOutlineRevisePrompt(foundation, book, startN, endN, groupOutlines, auditText, count) {
-  const sys = skillPrompt("章纲修订", { count, startN, endN });
-  const olText = groupOutlines.map((o) => `第${o.n}章 ${o.title}\n一句话：${o.summary}\n梗概：${o.detail}`).join("\n\n");
-  const user = `【小说总纲】\n${foundation.story_frame || "(空)"}\n\n【当前分卷大纲】\n${foundation.volume_map || "(空)"}\n\n【当前范围】第 ${startN}-${endN} 章\n\n【原始${count}章小纲】\n${olText}\n\n【结构审计意见】\n${auditText}\n\n请按规定格式输出修订后的 ${count} 章小纲。`;
+  const isScript = book.kind === "script";
+  const kind = isScript ? "script" : "longform";
+  const unit = isScript ? "场" : "章";
+  const sys = skillPrompt(isScript ? "分场大纲修订" : "章纲修订", { count, startN, endN }, kind);
+  const olText = groupOutlines.map((o) => `第${o.n}${unit} ${o.title}\n一句话：${o.summary}\n梗概：${o.detail}`).join("\n\n");
+  const user = isScript
+    ? `【剧本总纲】\n${foundation.story_frame || "(空)"}\n\n【幕场结构】\n${foundation.volume_map || "(空)"}\n\n【当前范围】第 ${startN}-${endN} 场\n\n【原始${count}场大纲】\n${olText}\n\n【结构审计意见】\n${auditText}\n\n请按规定格式输出修订后的 ${count} 场大纲。`
+    : `【小说总纲】\n${foundation.story_frame || "(空)"}\n\n【当前分卷大纲】\n${foundation.volume_map || "(空)"}\n\n【当前范围】第 ${startN}-${endN} 章\n\n【原始${count}章小纲】\n${olText}\n\n【结构审计意见】\n${auditText}\n\n请按规定格式输出修订后的 ${count} 章小纲。`;
   return [{ role: "system", content: sys }, { role: "user", content: user }];
 }
 // 解析审计文本：是否合格 + 严重/警告条数
@@ -552,6 +591,7 @@ async function runAutoLoop(bookId, job) {
     const state = new StateManager(DATA_ROOT);
     const book = await state.loadBookConfig(bookId);
     const cfg = loadWritingConfig();
+    const loops = cfg.loops;
     const bookTarget = book.targetChapters ?? 200;
     const stopAt = (cfg.stopAtChapter > 0) ? cfg.stopAtChapter : bookTarget;
     const maxMs = (cfg.stopAfterHours > 0) ? cfg.stopAfterHours * 3600 * 1000 : 0;
@@ -573,23 +613,28 @@ async function runAutoLoop(bookId, job) {
 
       const targetN = total + 1;
       job.current = targetN;
-      // 进入新一组（6/11/16…）且该组章纲缺失 → 先生成+审计该组
-      if (targetN > 5 && targetN % 5 === 1) {
+      const needOutline = hasLoopNode(loops, "auto", "outline_generate") || hasLoopNode(loops, "auto", "outline_audit");
+      // 进入新一组（6/11/16…）且该组章纲缺失 → 按 loop 配置生成/审计该组
+      if (needOutline && targetN > 5 && targetN % 5 === 1) {
         const outs = await loadChapterOutlines(bookId);
         if (!outs.some((o) => o.n === targetN)) {
-          prog(job, `📋 生成并审计第 ${targetN}-${targetN + 4} 章章纲…`);
+          prog(job, `📋 处理第 ${targetN}-${targetN + 4} 章章纲…`);
           try {
-            const { outlines } = await generateOutlines(bookId, targetN, 5, "");
-            const prev = (await loadChapterOutlines(bookId)).filter((o) => o.n < targetN || o.n >= targetN + 5);
-            await saveChapterOutlines(bookId, [...prev, ...outlines].sort((a, b) => a.n - b.n));
-            let r2 = 0, aud;
-            const maxOl = cfg.outlineAuditMaxRounds || 2;
-            while (r2 < maxOl && !job.stop) {
-              r2++;
-              aud = await auditOutlineGroup(bookId, targetN, 5);
-              prog(job, `🔎 章纲第 ${r2} 轮审计：${aud.passed ? "合格" : "修订中"}`);
-              if (aud.passed) break;
-              await reviseOutlineGroup(bookId, targetN, 5, aud.raw);
+            if (hasLoopNode(loops, "auto", "outline_generate")) {
+              const { outlines } = await generateOutlines(bookId, targetN, 5, "");
+              const prev = (await loadChapterOutlines(bookId)).filter((o) => o.n < targetN || o.n >= targetN + 5);
+              await saveChapterOutlines(bookId, [...prev, ...outlines].sort((a, b) => a.n - b.n));
+            }
+            if (hasLoopNode(loops, "auto", "outline_audit")) {
+              let r2 = 0, aud;
+              const maxOl = cfg.outlineAuditMaxRounds || 2;
+              while (r2 < maxOl && !job.stop) {
+                r2++;
+                aud = await auditOutlineGroup(bookId, targetN, 5);
+                prog(job, `🔎 章纲第 ${r2} 轮审计：${aud.passed ? "合格" : "修订中"}`);
+                if (aud.passed) break;
+                await reviseOutlineGroup(bookId, targetN, 5, aud.raw);
+              }
             }
             const all2 = await loadChapterOutlines(bookId);
             all2.forEach((o) => { if (o.n >= targetN && o.n < targetN + 5) { o.audited = true; o.confirmed = true; } });
@@ -609,11 +654,15 @@ async function runAutoLoop(bookId, job) {
       const olCtx = ol ? `【本章章纲（用户已确认，须遵循）】\n第${ol.n}章 ${ol.title}\n核心事件：${ol.summary}\n梗概：${ol.detail}` : undefined;
       prog(job, `✍ 自动写作第 ${targetN} 章${ol ? "（按已确认章纲）" : ""}…`);
       try {
-        const runner = makeRunner({ reviewMode: "auto", externalContext: olCtx, onStage: (s) => { prog(job, friendlyStage(s.msg || "")); } });
+        const reviewMode = hasLoopNode(loops, "auto", "chapter_auto_review") ? "auto" : "manual";
+        const runner = makeRunner({ reviewMode, externalContext: olCtx, onStage: (s) => { prog(job, friendlyStage(s.msg || "")); } });
         const r = await runner.writeNextChapter(bookId);
         if (job.stop) break;
-        await commitPanel(bookId, r.chapterNumber).catch(() => {});
-        prog(job, `已完成第 ${r.chapterNumber} 章（${r.status}）`);
+        if (hasLoopNode(loops, "auto", "panel_update")) {
+          await commitPanel(bookId, r.chapterNumber).catch(() => {});
+        }
+        const statusNote = reviewMode === "manual" ? "（已跳过自动审改）" : "";
+        prog(job, `已完成第 ${r.chapterNumber} 章（${r.status}）${statusNote}`);
         if (r.status === "state-degraded") { job.error = `第${r.chapterNumber}章 state 降级，已停止`; break; }
       } catch (e) {
         if ((cfg.stopOnTokenError || cfg.stopOnQuotaError) && isFatalApiCreditError(e)) {
@@ -698,11 +747,243 @@ const server = createServer(async (req, res) => {
       res.writeHead(404); res.end("not found"); return;
     }
 
+    // ---- 热榜抓取（无需 API Key）----
+    if (req.method === "GET" && path === "/api/market-rankings") {
+      try {
+        const { rankings, total, rankingsText } = await fetchMarketRankings();
+        return sendJson(res, 200, {
+          ok: true,
+          rankingsText,
+          rankingCount: total,
+          sources: rankings.map((r) => ({ platform: r.platform, count: r.entries.length })),
+          timestamp: new Date().toISOString(),
+        });
+      } catch (e) {
+        return sendJson(res, 500, appErrFromException("1013", e));
+      }
+    }
+
+    // ---- 报错自查 ----
+    if (req.method === "GET" && path === "/api/error-lookup") {
+      const q = String(url.searchParams.get("code") || url.searchParams.get("q") || "").trim();
+      if (!q) return sendJson(res, 400, appErr("E100"));
+      const hits = lookupErrors(q);
+      return sendJson(res, 200, { ok: true, query: q, hits, catalog: ERROR_CATALOG.map((e) => ({ code: e.code, title: e.title })) });
+    }
+
+    // ---- 热点小说内容指导：综述(~150字) + 男频/女频 + 热点类型 TAB（SSE 细粒度进度）----
+    if (req.method === "POST" && path === "/api/hot-novel-guide") {
+      if (!hasApiKey()) return sendJson(res, 400, appErr("NO_KEY"));
+      const b = await body(req);
+      sseInit(res);
+      let aborted = false;
+      req.on("close", () => { aborted = true; });
+      const ETA = 120;
+      const sendStage = (p) => {
+        if (aborted || !p?.msg) return;
+        sseSend(res, "stage", {
+          msg: p.msg,
+          percent: p.percent,
+          remaining: p.remaining || "",
+          etaSec: ETA,
+          rich: true,
+        });
+      };
+      try {
+        const genreLabel = String(b.genreLabel || b.genre || "").trim();
+        const title = String(b.title || "").trim();
+        const settingsHint = String(b.settings || "").trim().slice(0, 500);
+        let rankings = [];
+        let total = 0;
+        let rankingsText = String(b.rankingsText || "").trim();
+        let sources = Array.isArray(b.sources) ? b.sources : [];
+        if (!rankingsText) {
+          sendStage({ msg: "正在获取热点类型：男频类型；女频类型", percent: 5, remaining: "市场综述与热点 TAB" });
+          const fetched = await fetchMarketRankings((p) => sendStage({
+            msg: p.msg,
+            percent: p.percent,
+            remaining: "市场综述与热点 TAB",
+          }));
+          rankings = fetched.rankings;
+          total = fetched.total;
+          rankingsText = fetched.rankingsText;
+          sources = rankings.map((r) => ({ platform: r.platform, count: r.entries.length }));
+        } else {
+          total = (rankingsText.match(/^- /gm) || []).length;
+          sendStage({ msg: `已使用预取热榜（共 ${total} 条）`, percent: 25, remaining: "市场综述与热点 TAB" });
+        }
+        if (aborted) return;
+        sendStage({
+          msg: "正在结合 skill「热点小说内容指导」组装 Prompt",
+          percent: 30,
+          remaining: "男频 TAB、女频 TAB",
+        });
+        const sys = skillPrompt("热点小说内容指导", {}, "longform");
+        const user = `## 实时排行榜数据\n\n${rankingsText}\n\n## 用户线索\n题材：${genreLabel || "未指定"}\n书名：${title || "未定"}\n已有设定摘录：${settingsHint || "（尚无）"}\n\n请输出 JSON：overview（约150字综述）+ channels（男频/女频各 3～5 个 types，每条 guide 约150字）。`;
+        sendStage({ msg: "正在发送 Prompt（热点小说内容指导）", percent: 35, remaining: "男频 TAB、女频 TAB" });
+        const model = loadModelConfig().architect || loadLLMConfig().fastModel;
+        let chars = 0;
+        let lastAt = 0;
+        const started = Date.now();
+        sendStage({ msg: "大模型已接收 Prompt，开始理解中", percent: 40, remaining: "男频 TAB、女频 TAB" });
+        const resp = await chatCompletion(makeClient(), model, [
+          { role: "system", content: sys },
+          { role: "user", content: user },
+        ], {
+          temperature: 0.6,
+          stream: true,
+          onTextDelta: (t) => {
+            chars += t.length;
+            const now = Date.now();
+            if (now - lastAt < 700) return;
+            lastAt = now;
+            const pct = 40 + Math.min(40, Math.round(chars / 6000 * 40));
+            sendStage({
+              msg: `大模型正在返回市场综述与频向类型（已接收 ${chars} 字）`,
+              percent: pct,
+              remaining: "解析男频/女频 TAB",
+            });
+          },
+        });
+        if (aborted) return;
+        const elapsed = Math.round((Date.now() - started) / 1000);
+        sendStage({
+          msg: `大模型已返回，正在解析男频 TAB 简述，耗时 ${elapsed}s`,
+          percent: 88,
+          remaining: "女频 TAB",
+        });
+        const { overview, channels, tabs } = parseHotGuideResult(resp?.content ?? "");
+        sendStage({ msg: "正在解析女频 TAB 简述", percent: 94, remaining: "收尾" });
+        if (!overview && !(channels?.length || tabs?.length)) {
+          sseSend(res, "error", appErr("1011"));
+          res.end();
+          return;
+        }
+        sendStage({
+          msg: "综述与热点类型已就绪",
+          percent: 100,
+          remaining: "无",
+        });
+        sseSend(res, "done", {
+          ok: true,
+          overview,
+          channels: channels || [],
+          tabs: tabs || [],
+          rankingCount: total,
+          sources: sources.length
+            ? sources
+            : rankings.map((r) => ({ platform: r.platform, count: r.entries.length })),
+          timestamp: new Date().toISOString(),
+        });
+        res.end();
+      } catch (e) {
+        if (!aborted) { sseSend(res, "error", appErrFromException("1011", e)); res.end(); }
+      }
+      return;
+    }
+
+    // ---- 热点 TAB → AI 一键生成书名/题材/初始设定（SSE）----
+    if (req.method === "POST" && path === "/api/hot-novel-fill") {
+      if (!hasApiKey()) return sendJson(res, 400, appErr("NO_KEY"));
+      const b = await body(req);
+      sseInit(res);
+      let aborted = false;
+      req.on("close", () => { aborted = true; });
+      const ETA = 60;
+      const sendStage = (p) => {
+        if (aborted || !p?.msg) return;
+        sseSend(res, "stage", {
+          msg: p.msg,
+          percent: p.percent,
+          remaining: p.remaining || "",
+          etaSec: ETA,
+          rich: true,
+        });
+      };
+      try {
+        const label = String(b.label || "").trim();
+        const channelLabel = String(b.channelLabel || "").trim();
+        const typeLabel = String(b.typeLabel || "").trim();
+        const guide = String(b.guide || "").trim();
+        const overview = String(b.overview || "").trim();
+        if (!guide) {
+          sseSend(res, "error", appErr("E103"));
+          res.end();
+          return;
+        }
+        sendStage({
+          msg: `已选：${channelLabel || label || "热点"} · ${typeLabel || "类型"}`,
+          percent: 8,
+          remaining: "题材列表、书名、初始设定",
+        });
+        let genres = [];
+        try { genres = loadGenres(); } catch { genres = []; }
+        if (!genres.length) {
+          genres = [
+            { id: "other", label: "通用/自定义" }, { id: "urban", label: "都市" },
+            { id: "xuanhuan", label: "玄幻" }, { id: "xianxia", label: "仙侠" },
+          ];
+        }
+        sendStage({ msg: "正在加载可选题材列表", percent: 15, remaining: "书名、初始设定" });
+        const genreLines = genres.map((g) => `- ${g.id}：${g.label}`).join("\n");
+        sendStage({
+          msg: "正在结合 skill「热点一键生成设定」组装 Prompt",
+          percent: 25,
+          remaining: "书名、题材、初始设定",
+        });
+        const sys = skillPrompt("热点一键生成设定", {}, "longform");
+        const user = `## 市场综述\n${overview || "（无）"}\n\n## 选中的方向\n频向：${channelLabel || label || "（无）"}\n热点类型：${typeLabel || "（无）"}\n开书框架：${guide}\n\n## 可选题材（genreId 必须填左侧英文 id，不要填中文名）\n${genreLines}\n\n请输出 JSON：title / genreId / settings。`;
+        sendStage({ msg: "正在发送 Prompt（一键生成设定）", percent: 35, remaining: "书名、题材、初始设定" });
+        const model = loadModelConfig().architect || loadLLMConfig().strongModel || loadLLMConfig().fastModel;
+        let chars = 0;
+        let lastAt = 0;
+        sendStage({ msg: "大模型已接收 Prompt，开始理解中", percent: 42, remaining: "书名、题材、初始设定" });
+        const resp = await chatCompletion(makeClient(), model, [
+          { role: "system", content: sys },
+          { role: "user", content: user },
+        ], {
+          temperature: 0.75,
+          stream: true,
+          onTextDelta: (t) => {
+            chars += t.length;
+            const now = Date.now();
+            if (now - lastAt < 700) return;
+            lastAt = now;
+            const pct = 42 + Math.min(35, Math.round(chars / 4000 * 35));
+            sendStage({
+              msg: `大模型正在返回书名与初始设定（已接收 ${chars} 字）`,
+              percent: pct,
+              remaining: "解析回填",
+            });
+          },
+        });
+        if (aborted) return;
+        sendStage({ msg: "正在解析书名", percent: 82, remaining: "题材、初始设定" });
+        const filled = parseHotFill(resp?.content ?? "", genres);
+        sendStage({ msg: "正在解析题材 genreId", percent: 88, remaining: "初始设定" });
+        const genreMeta = genres.find((g) => g.id === filled.genreId);
+        sendStage({ msg: "正在解析小说初始设定", percent: 94, remaining: "回填表单" });
+        sendStage({ msg: "正在回填表单", percent: 100, remaining: "无" });
+        sseSend(res, "done", {
+          ok: true,
+          title: filled.title,
+          genreId: filled.genreId,
+          genreLabel: genreMeta?.label || filled.genreId,
+          settings: filled.settings,
+        });
+        res.end();
+      } catch (e) {
+        if (!aborted) { sseSend(res, "error", appErrFromException("1012", e)); res.end(); }
+      }
+      return;
+    }
+
     // ---- 建书 + 生成基础设定（大纲/世界观/人设/伏笔）----
     if (req.method === "POST" && path === "/api/foundation") {
+      if (!hasApiKey()) return sendJson(res, 400, appErr("NO_KEY"));
       const b = await body(req);
       const { kind = "longform", title, genre = "other", targetChapters = 200, chapterWordCount = 3000, settings = "" } = b;
-      if (!title) return sendJson(res, 400, { error: "缺少标题" });
+      if (!title) return sendJson(res, 400, appErr("E101"));
       const bookId = slug(title);
       await mkdir(join(DATA_ROOT, "books"), { recursive: true });
       // 已存在则先清掉（重来）
@@ -718,29 +999,54 @@ const server = createServer(async (req, res) => {
       let aborted = false;
       req.on("close", () => { aborted = true; });
       try {
-        // 建书时把实际发给模型的 prompt 留存到输入记录（按 agent 分条）+ 实时进度反馈
+        // 建书时把实际发给模型的 prompt 留存到输入记录（按 agent 分条）+ 细粒度进度反馈
         let reqSeq = 0;
         const onRequest = ({ agent, messages }) => {
           reqSeq += 1;
           const text = messages.map((m) => `〖${m.role}〗\n${typeof m.content === "string" ? m.content : JSON.stringify(m.content)}`).join("\n\n");
           logInput(bookId, { type: `建书Prompt·${agent}·#${reqSeq}`, text }).catch(() => {});
-          if (!aborted) sseSend(res, "stage", { msg: `📡 已向模型发送「${friendlyAgent(agent)}」请求，等待生成…` });
         };
-        const onStage = (s) => { if (!aborted && s?.msg) sseSend(res, "stage", { msg: friendlyStage(s.msg) }); };
-        sseSend(res, "stage", { msg: "📖 正在初始化书籍与创作骨架…" });
+        const onProgress = (p) => {
+          if (aborted || !p?.msg) return;
+          sseSend(res, "stage", {
+            msg: p.msg,
+            percent: p.percent,
+            remaining: p.remaining || "",
+            elapsedSec: p.elapsedSec,
+            step: p.step || "",
+            phase: p.phase || "",
+            etaSec: 600,
+            rich: true,
+          });
+        };
+        sseSend(res, "stage", {
+          msg: "正在初始化书籍与创作骨架…",
+          percent: 1,
+          remaining: "故事框架、分卷卷纲、角色卡、创作规则、伏笔清单、文风指南",
+          etaSec: 600,
+          rich: true,
+        });
         const gGuide = genreGuide(genre);
         const external = [
           settings,
           gGuide ? `【题材说明·${genre}】\n${gGuide}` : "",
         ].filter(Boolean).join("\n\n");
-        const runner = makeRunner({ externalContext: external, onRequest, onStage });
-        await runner.initBook(bookConfig);
-        if (aborted) return;
+        const runner = makeRunner({ externalContext: external, onRequest, onProgress });
+        const foundationLoop = loadWritingConfig().loops?.foundation;
+        await runner.initBook(bookConfig, { foundationLoop });
+        if (aborted) {
+          await rm(join(DATA_ROOT, "books", bookId), { recursive: true, force: true }).catch(() => {});
+          return;
+        }
         const foundation = await readFoundation(bookId);
         sseSend(res, "done", { bookId, kind, foundation });
         res.end();
       } catch (e) {
-        if (!aborted) { sseSend(res, "error", { code: 1001, message: String(e?.message ?? e) }); res.end(); }
+        if (aborted) {
+          await rm(join(DATA_ROOT, "books", bookId), { recursive: true, force: true }).catch(() => {});
+          return;
+        }
+        if (!aborted) { sseSend(res, "error", appErrFromException("1001", e)); res.end(); }
       }
       return;
     }
@@ -748,14 +1054,14 @@ const server = createServer(async (req, res) => {
     // ---- 修订基础设定（用户反馈重生成）----
     if (req.method === "POST" && path === "/api/foundation/revise") {
       const { bookId, feedback } = await body(req);
-      if (!bookId || !feedback) return sendJson(res, 400, { error: "缺少 bookId 或反馈" });
+      if (!bookId || !feedback) return sendJson(res, 400, appErr("E102"));
       await logInput(bookId, { type: "设定修订意见", text: feedback });
       try {
         const runner = makeRunner({});
         await runner.reviseFoundation(bookId, feedback);
         return sendJson(res, 200, { bookId, foundation: await readFoundation(bookId) });
       } catch (e) {
-        return sendJson(res, 500, { code: 1006, error: String(e?.message ?? e) });
+        return sendJson(res, 500, appErrFromException("1006", e));
       }
     }
 
@@ -768,7 +1074,13 @@ const server = createServer(async (req, res) => {
       let aborted = false;
       req.on("close", () => { aborted = true; });
       try {
-        sseSend(res, "stage", { msg: `正在规划第 ${startN}-${startN + count - 1} 章章纲…` });
+        sseSend(res, "stage", {
+          msg: `正在结合 skill 规划第 ${startN}-${startN + count - 1} 章章纲…`,
+          percent: 15,
+          remaining: "流式返回、解析反显",
+          etaSec: 120,
+          rich: true,
+        });
         const { outlines } = await generateOutlines(bookId, startN, count,
           feedback, (t) => { if (!aborted) sseSend(res, "delta", { t }); });
         if (aborted) return;
@@ -776,10 +1088,17 @@ const server = createServer(async (req, res) => {
         const prev = (await loadChapterOutlines(bookId)).filter((o) => o.n < startN || o.n >= startN + count);
         const merged = [...prev, ...outlines].sort((a, b) => a.n - b.n);
         await saveChapterOutlines(bookId, merged);
+        sseSend(res, "stage", {
+          msg: "章纲已生成，正在保存",
+          percent: 95,
+          remaining: "无",
+          etaSec: 120,
+          rich: true,
+        });
         sseSend(res, "done", { outlines });
         res.end();
       } catch (e) {
-        if (!aborted) { sseSend(res, "error", { code: 1007, message: String(e?.message ?? e) }); res.end(); }
+        if (!aborted) { sseSend(res, "error", appErrFromException("1007", e)); res.end(); }
       }
       return;
     }
@@ -795,7 +1114,13 @@ const server = createServer(async (req, res) => {
         // 1) 若该组还没有章纲，先生成
         const existing = await loadChapterOutlines(bookId);
         if (!existing.some((o) => o.n === startN)) {
-          sseSend(res, "stage", { msg: `📋 正在生成第 ${startN}-${startN + count - 1} 章章纲…` });
+          sseSend(res, "stage", {
+            msg: `正在生成第 ${startN}-${startN + count - 1} 章章纲…`,
+            percent: 10,
+            remaining: "审计、修订",
+            etaSec: 240,
+            rich: true,
+          });
           const { outlines } = await generateOutlines(bookId, startN, count, "", (t) => !aborted && sseSend(res, "delta", { t }));
           const prev = (await loadChapterOutlines(bookId)).filter((o) => o.n < startN || o.n >= startN + count);
           await saveChapterOutlines(bookId, [...prev, ...outlines].sort((a, b) => a.n - b.n));
@@ -805,12 +1130,25 @@ const server = createServer(async (req, res) => {
         let round = 0, audit;
         while (round < MAX && !aborted) {
           round += 1;
-          sseSend(res, "stage", { msg: `🔎 第 ${round} 轮章纲审计中…` });
+          const base = 20 + Math.round((round - 1) / Math.max(1, MAX) * 60);
+          sseSend(res, "stage", {
+            msg: `第 ${round} 轮章纲审计中…`,
+            percent: base,
+            remaining: round < MAX ? "可能修订、再审计" : "收尾",
+            etaSec: 240,
+            rich: true,
+          });
           audit = await auditOutlineGroup(bookId, startN, count, (t) => !aborted && sseSend(res, "delta", { t }));
           if (aborted) return;
           sseSend(res, "audit", { round, passed: audit.passed, verdict: audit.verdictLine, raw: audit.raw });
           if (audit.passed) break;
-          sseSend(res, "stage", { msg: `✏ 章纲不合格，按审计意见修订中（第 ${round} 次）…` });
+          sseSend(res, "stage", {
+            msg: `章纲不合格，按审计意见修订中（第 ${round} 次）…`,
+            percent: base + 10,
+            remaining: "再审计",
+            etaSec: 240,
+            rich: true,
+          });
           await reviseOutlineGroup(bookId, startN, count, audit.raw, (t) => !aborted && sseSend(res, "delta", { t }));
           if (aborted) return;
         }
@@ -822,7 +1160,7 @@ const server = createServer(async (req, res) => {
         sseSend(res, "done", { startN, count, passed: !!audit?.passed, rounds: round, outlines: finalOutlines });
         res.end();
       } catch (e) {
-        if (!aborted) { sseSend(res, "error", { code: 1009, message: String(e?.message ?? e) }); res.end(); }
+        if (!aborted) { sseSend(res, "error", appErrFromException("1009", e)); res.end(); }
       }
       return;
     }
@@ -830,7 +1168,7 @@ const server = createServer(async (req, res) => {
     // ---- 保存用户编辑后的章纲 ----
     if (req.method === "POST" && path === "/api/chapter-outline/save") {
       const { bookId, outlines } = await body(req);
-      if (!bookId || !Array.isArray(outlines)) return sendJson(res, 400, { error: "参数错误" });
+      if (!bookId || !Array.isArray(outlines)) return sendJson(res, 400, appErr("E108"));
       const merged = [...outlines].sort((a, b) => a.n - b.n);
       await saveChapterOutlines(bookId, merged);
       await logInput(bookId, { type: "确认章纲", text: merged.map((o) => `第${o.n}章 ${o.title}：${o.summary}`).join("\n") });
@@ -868,10 +1206,35 @@ const server = createServer(async (req, res) => {
       sseInit(res);
       let aborted = false;
       req.on("close", () => { aborted = true; });
+      const WRITE_ETA = 180;
+      const sendWriteStage = (p) => {
+        if (aborted || !p?.msg) return;
+        sseSend(res, "stage", {
+          msg: p.msg,
+          percent: p.percent != null ? p.percent : 15,
+          remaining: p.remaining || "流式返回正文、反显",
+          etaSec: WRITE_ETA,
+          rich: true,
+        });
+      };
+      sendWriteStage({
+        msg: "正在结合 skill「正文写手」组装本章上下文",
+        percent: 8,
+        remaining: "模型返回、结构清洗、反显",
+      });
       const runner = makeRunner({
         externalContext: fullContext,
         onDelta: (t) => { if (!aborted) sseSend(res, "delta", { t }); },
-        onStage: (s) => { if (!aborted) sseSend(res, "stage", s); },
+        onStage: (s) => {
+          const msg = friendlyStage(s.msg || "") || s.msg;
+          if (!msg) return;
+          const chars = s.chars || 0;
+          sendWriteStage({
+            msg: chars ? `大模型正在返回正文（已接收 ${chars} 字）` : msg,
+            percent: chars ? Math.min(85, 20 + Math.round(chars / 120)) : (s.percent ?? 18),
+            remaining: chars ? "结构清洗、反显" : "流式返回正文、反显",
+          });
+        },
         reviewMode: "manual",
       });
       try {
@@ -881,7 +1244,7 @@ const server = createServer(async (req, res) => {
         sseSend(res, "done", { chapterNumber: result.chapterNumber, title: ch?.title ?? result.title, content: ch?.content ?? "" });
         res.end();
       } catch (e) {
-        if (!aborted) { sseSend(res, "error", { code: 1002, message: String(e?.message ?? e) }); res.end(); }
+        if (!aborted) { sseSend(res, "error", appErrFromException("1002", e)); res.end(); }
       }
       return;
     }
@@ -894,7 +1257,7 @@ const server = createServer(async (req, res) => {
         const audit = await runner.auditDraft(bookId, chapterNumber);
         return sendJson(res, 200, { audit });
       } catch (e) {
-        return sendJson(res, 500, { code: 1003, error: String(e?.message ?? e) });
+        return sendJson(res, 500, appErrFromException("1003", e));
       }
     }
 
@@ -929,26 +1292,53 @@ const server = createServer(async (req, res) => {
       let aborted = false;
       req.on("close", () => { aborted = true; });
       const MAX_ROUNDS = loadWritingConfig().autoReviewMaxRounds || 3;
+      const AUDIT_ETA = 300;
+      const sendAuditStage = (p) => {
+        if (aborted || !p?.msg) return;
+        sseSend(res, "stage", {
+          msg: p.msg,
+          percent: p.percent != null ? p.percent : 20,
+          remaining: p.remaining || "审改中",
+          etaSec: AUDIT_ETA,
+          rich: true,
+        });
+      };
       const packAudit = (a) => ({ passed: !!a.passed, score: a.score ?? null, summary: a.summary ?? "", issues: (a.issues || []).map((i) => (typeof i === "string" ? { severity: "问题", description: i } : { severity: i.severity, description: i.description })) });
       try {
         // 第 1 轮审计
-        sseSend(res, "stage", { msg: "🔎 第 1 轮审计中（连贯性 / 设定一致性 / 节奏爽感）…" });
-        let audit = await runner_auditOnce(bookId, chapterNumber, (m) => !aborted && sseSend(res, "stage", { msg: m }));
+        sendAuditStage({
+          msg: "第 1 轮审计中（连贯性 / 设定一致性 / 节奏爽感）…",
+          percent: 12,
+          remaining: "可能修订、再审计",
+        });
+        let audit = await runner_auditOnce(bookId, chapterNumber, (m) => sendAuditStage({ msg: m, percent: 18, remaining: "审计结果" }));
         if (aborted) return;
         sseSend(res, "audit", { round: 1, ...packAudit(audit) });
         let round = 1;
         while (!audit.passed && round < MAX_ROUNDS && !aborted) {
           round += 1;
           const n = (audit.issues || []).length;
-          sseSend(res, "stage", { msg: `✏ 发现 ${n} 条问题，按等级自动修订中（第 ${round - 1} 次修订）…` });
+          const base = 20 + Math.round((round - 1) / Math.max(1, MAX_ROUNDS) * 60);
+          sendAuditStage({
+            msg: `发现 ${n} 条问题，按等级自动修订中（第 ${round - 1} 次修订）…`,
+            percent: base,
+            remaining: "再审计",
+          });
           const reviser = makeRunner({
             onDelta: (t) => { if (!aborted) sseSend(res, "delta", { t }); },
-            onStage: (s) => { if (!aborted) sseSend(res, "stage", { msg: friendlyStage(s.msg || "") }); },
+            onStage: (s) => {
+              const msg = friendlyStage(s.msg || "") || s.msg;
+              if (msg) sendAuditStage({ msg, percent: base + 5, remaining: "再审计" });
+            },
           });
           await reviser.reviseDraft(bookId, chapterNumber);
           if (aborted) return;
-          sseSend(res, "stage", { msg: `🔎 第 ${round} 轮审计中…` });
-          audit = await runner_auditOnce(bookId, chapterNumber, (m) => !aborted && sseSend(res, "stage", { msg: m }));
+          sendAuditStage({
+            msg: `第 ${round} 轮审计中…`,
+            percent: base + 12,
+            remaining: round < MAX_ROUNDS ? "可能修订、再审计" : "收尾",
+          });
+          audit = await runner_auditOnce(bookId, chapterNumber, (m) => sendAuditStage({ msg: m, percent: base + 15, remaining: "审计结果" }));
           if (aborted) return;
           sseSend(res, "audit", { round, ...packAudit(audit) });
         }
@@ -960,7 +1350,7 @@ const server = createServer(async (req, res) => {
         });
         res.end();
       } catch (e) {
-        if (!aborted) { sseSend(res, "error", { code: 1008, message: String(e?.message ?? e) }); res.end(); }
+        if (!aborted) { sseSend(res, "error", appErrFromException("1008", e)); res.end(); }
       }
       return;
     }
@@ -982,7 +1372,7 @@ const server = createServer(async (req, res) => {
         const ch = await readChapter(bookId, result.chapterNumber ?? chapterNumber);
         if (!aborted) { sseSend(res, "done", { chapterNumber: result.chapterNumber ?? chapterNumber, title: ch?.title, content: ch?.content ?? "", audit: result.auditResult }); res.end(); }
       } catch (e) {
-        if (!aborted) { sseSend(res, "error", { code: 1004, message: String(e?.message ?? e) }); res.end(); }
+        if (!aborted) { sseSend(res, "error", appErrFromException("1004", e)); res.end(); }
       }
       return;
     }
@@ -998,7 +1388,7 @@ const server = createServer(async (req, res) => {
     // ---- 自动连写：后台启动（不依赖页面连接，关掉页面也继续）----
     if (req.method === "POST" && path === "/api/auto/start") {
       const { bookId } = await body(req);
-      if (!bookId) return sendJson(res, 400, { error: "no bookId" });
+      if (!bookId) return sendJson(res, 400, appErr("E102"));
       const existing = autoJobs.get(bookId);
       if (existing && existing.running) return sendJson(res, 200, { ok: true, running: true, already: true });
       const job = { running: true, stop: false, current: await chapterCount(bookId) + 1, msg: "🚀 自动连写已启动…", error: null, done: false, completed: false, startedAt: Date.now(), lastProgressAt: Date.now() };
@@ -1039,6 +1429,30 @@ const server = createServer(async (req, res) => {
       return sendJson(res, 200, { ok: true });
     }
 
+    // ---- 可下载脚本：列表（按系统）----
+    if (req.method === "GET" && path === "/api/scripts") {
+      const os = url.searchParams.get("os") === "mac" ? "mac" : "windows";
+      return sendJson(res, 200, { os, port: PORT, scripts: listScripts(os) });
+    }
+    // ---- 可下载脚本：下载（关网页也能用：对本机 API 启停任务 / 防休眠）----
+    if (req.method === "GET" && path === "/api/scripts/download") {
+      const os = url.searchParams.get("os") === "mac" ? "mac" : "windows";
+      const kind = url.searchParams.get("kind") || "";
+      const bookId = url.searchParams.get("bookId") || "";
+      try {
+        const { filename, mime, content } = buildScript({ os, kind, port: PORT, bookId });
+        res.writeHead(200, {
+          "Content-Type": mime,
+          "Content-Disposition": `attachment; filename="${filename}"`,
+          "Cache-Control": "no-store",
+        });
+        res.end(content);
+      } catch (e) {
+        return sendJson(res, 400, appErrFromException("E108", e));
+      }
+      return;
+    }
+
     // ---- 覆盖某章正文（用于"使用审计前版本"回写、或手动编辑）----
     if (req.method === "POST" && path === "/api/set-chapter") {
       const { bookId, n, content } = await body(req);
@@ -1046,7 +1460,7 @@ const server = createServer(async (req, res) => {
       const files = await readdir(dir).catch(() => []);
       const pad = String(n).padStart(4, "0");
       const f = files.find((x) => x.startsWith(pad) && x.endsWith(".md"));
-      if (!f) return sendJson(res, 404, { error: "章节不存在" });
+      if (!f) return sendJson(res, 404, appErr("E404"));
       await writeFile(join(dir, f), content, "utf8");
       return sendJson(res, 200, { ok: true });
     }
@@ -1071,20 +1485,18 @@ const server = createServer(async (req, res) => {
 
     // ---- LLM 密钥/端点配置：读（密钥永远掩码，绝不明文返回）----
     if (req.method === "GET" && path === "/api/config") {
-      const eff = loadLLMConfig();          // 含环境变量覆盖后的生效值
-      const raw = loadLLMConfigRaw();       // 文件里的原始值（判断 key 来源）
-      const k = eff.apiKey || "";
-      const keyHint = k ? `${k.slice(0, 3)}****${k.slice(-2)}` : "";
-      const keyFromEnv = !!(process.env.NOVEL_API_KEY || process.env.OPENAI_API_KEY);
+      const eff = loadLLMConfig();
+      const raw = loadLLMConfigRaw();
+      const k = String(raw.apiKey || "").trim();
+      const keyHint = keyDisplayMask(k);
       return sendJson(res, 200, {
-        hasKey: !!k, keyHint, keyFromEnv,
+        hasKey: !!k,
+        keyHint,
         baseUrl: eff.baseUrl,
         models: eff.models,
         fastModel: eff.fastModel,
         strongModel: eff.strongModel,
         temperature: eff.temperature ?? 0.7,
-        // 仅告知文件里是否已存密钥，不返回内容
-        fileHasKey: !!raw.apiKey,
       });
     }
     // ---- LLM 密钥/端点配置：存（写入 data/config.json；apiKey 为空则保留原值，不清空）----
@@ -1116,9 +1528,9 @@ const server = createServer(async (req, res) => {
     // ---- 题材设置：存 ----
     if (req.method === "POST" && path === "/api/genres") {
       const { genres } = await body(req);
-      if (!Array.isArray(genres) || !genres.length) return sendJson(res, 400, { error: "题材列表不能为空" });
+      if (!Array.isArray(genres) || !genres.length) return sendJson(res, 400, appErr("E104"));
       const clean = genres.map(normalizeGenre).filter(Boolean);
-      if (!clean.length) return sendJson(res, 400, { error: "题材列表不能为空" });
+      if (!clean.length) return sendJson(res, 400, appErr("E104"));
       await mkdir(DATA_ROOT, { recursive: true }).catch(() => {});
       await writeFile(GENRES_PATH, JSON.stringify(clean, null, 2), "utf8");
       return sendJson(res, 200, { ok: true, genres: clean });
@@ -1126,7 +1538,11 @@ const server = createServer(async (req, res) => {
 
     // ---- 自动写作配置：读 ----
     if (req.method === "GET" && path === "/api/writing-config") {
-      return sendJson(res, 200, { config: loadWritingConfig() });
+      return sendJson(res, 200, {
+        config: loadWritingConfig(),
+        loopDefs: LOOP_NODE_DEFS,
+        defaultLoops: DEFAULT_LOOPS,
+      });
     }
     // ---- 自动写作配置：存 ----
     if (req.method === "POST" && path === "/api/writing-config") {
@@ -1143,6 +1559,9 @@ const server = createServer(async (req, res) => {
       if (config?.stopOnQuotaError != null) next.stopOnQuotaError = !!config.stopOnQuotaError;
       if (config?.outlineAuditMaxRounds != null) next.outlineAuditMaxRounds = num(config.outlineAuditMaxRounds, 0, 5, cur.outlineAuditMaxRounds);
       if (config?.autoReviewMaxRounds != null) next.autoReviewMaxRounds = num(config.autoReviewMaxRounds, 1, 8, cur.autoReviewMaxRounds);
+      if (config?.loops != null) {
+        next.loops = normalizeLoops({ ...cur.loops, ...config.loops });
+      }
       await mkdir(DATA_ROOT, { recursive: true }).catch(() => {});
       await writeFile(WRITING_CFG_PATH, JSON.stringify(next, null, 2), "utf8");
       return sendJson(res, 200, { ok: true, config: next });
@@ -1163,7 +1582,7 @@ const server = createServer(async (req, res) => {
     if (req.method === "GET" && path === "/api/skill") {
       const group = SKILL_GROUPS.some((g) => g.id === url.searchParams.get("group")) ? url.searchParams.get("group") : "custom";
       const name = safeSkillName(url.searchParams.get("name"));
-      if (!name) return sendJson(res, 400, { error: "缺少名称" });
+      if (!name) return sendJson(res, 400, appErr("E105"));
       let content = "";
       try { content = await readFile(skillFilePath(group, name), "utf8"); } catch { /* 新建 */ }
       const isBuiltin = !!DEFAULT_SKILLS[group]?.[name];
@@ -1174,7 +1593,7 @@ const server = createServer(async (req, res) => {
       const { group: rawGroup, name, content } = await body(req);
       const group = SKILL_GROUPS.some((g) => g.id === rawGroup) ? rawGroup : "custom";
       const n = safeSkillName(name);
-      if (!n) return sendJson(res, 400, { error: "名称非法" });
+      if (!n) return sendJson(res, 400, appErr("E106"));
       await mkdir(join(SKILLS_DIR, group), { recursive: true }).catch(() => {});
       await writeFile(skillFilePath(group, n), content ?? "", "utf8");
       return sendJson(res, 200, { ok: true, group, name: n });
@@ -1183,7 +1602,7 @@ const server = createServer(async (req, res) => {
     if (req.method === "POST" && path === "/api/skill/reset") {
       const { group, name } = await body(req);
       const dflt = DEFAULT_SKILLS[group]?.[safeSkillName(name)];
-      if (dflt == null) return sendJson(res, 400, { error: "该技能没有内置默认" });
+      if (dflt == null) return sendJson(res, 400, appErr("E107"));
       await mkdir(join(SKILLS_DIR, group), { recursive: true }).catch(() => {});
       await writeFile(skillFilePath(group, name), dflt, "utf8");
       return sendJson(res, 200, { ok: true, content: dflt });
@@ -1193,7 +1612,7 @@ const server = createServer(async (req, res) => {
       const { group: rawGroup, name } = await body(req);
       const group = SKILL_GROUPS.some((g) => g.id === rawGroup) ? rawGroup : "custom";
       const n = safeSkillName(name);
-      if (!n) return sendJson(res, 400, { error: "名称非法" });
+      if (!n) return sendJson(res, 400, appErr("E106"));
       await rm(skillFilePath(group, n), { force: true }).catch(() => {});
       return sendJson(res, 200, { ok: true });
     }
@@ -1202,7 +1621,7 @@ const server = createServer(async (req, res) => {
     if (req.method === "POST" && path === "/api/foundation/save-section") {
       const { bookId, section, content } = await body(req);
       const rel = FOUNDATION_SECTION_PATH[section];
-      if (!bookId || !rel) return sendJson(res, 400, { error: "参数错误" });
+      if (!bookId || !rel) return sendJson(res, 400, appErr("E108"));
       await writeFile(join(DATA_ROOT, "books", bookId, "story", rel), content ?? "", "utf8");
       await logInput(bookId, { type: `编辑设定·${section}`, text: (content || "").slice(0, 200) + "…" });
       return sendJson(res, 200, { ok: true });
@@ -1210,7 +1629,7 @@ const server = createServer(async (req, res) => {
     // ---- 保存编辑后的角色卡 ----
     if (req.method === "POST" && path === "/api/role/save") {
       const { bookId, tier, name, content } = await body(req);
-      if (!bookId || !tier || !name) return sendJson(res, 400, { error: "参数错误" });
+      if (!bookId || !tier || !name) return sendJson(res, 400, appErr("E108"));
       const dir = join(DATA_ROOT, "books", bookId, "story", "roles", tier);
       await mkdir(dir, { recursive: true });
       await writeFile(join(dir, `${name}.md`), content ?? "", "utf8");
@@ -1223,7 +1642,7 @@ const server = createServer(async (req, res) => {
       const files = await readdir(dir).catch(() => []);
       const pad = String(n).padStart(4, "0");
       const f = files.find((x) => x.startsWith(pad) && x.endsWith(".md"));
-      if (!f) return sendJson(res, 404, { error: "章节不存在" });
+      if (!f) return sendJson(res, 404, appErr("E404"));
       await writeFile(join(dir, f), content, "utf8");
       return sendJson(res, 200, { ok: true });
     }
@@ -1231,7 +1650,7 @@ const server = createServer(async (req, res) => {
     // ---- 删除第 n 章（及其之后章节），回滚到上一节点 ----
     if (req.method === "POST" && path === "/api/chapter/delete") {
       const { bookId, n } = await body(req);
-      if (!bookId || !n) return sendJson(res, 400, { error: "参数错误" });
+      if (!bookId || !n) return sendJson(res, 400, appErr("E108"));
       await removeChapter(bookId, Number(n));
       return sendJson(res, 200, { ok: true, total: await chapterCount(bookId) });
     }
@@ -1245,14 +1664,14 @@ const server = createServer(async (req, res) => {
     // ---- 人物面板：本章通过后提交更新（LLM 依据最终正文更新并保存）----
     if (req.method === "POST" && path === "/api/panel/commit") {
       const { bookId, n } = await body(req);
-      if (!bookId || !n) return sendJson(res, 400, { error: "参数错误" });
+      if (!bookId || !n) return sendJson(res, 400, appErr("E108"));
       try { return sendJson(res, 200, { panel: await commitPanel(bookId, n) }); }
-      catch (e) { return sendJson(res, 500, { code: 1010, error: String(e?.message ?? e) }); }
+      catch (e) { return sendJson(res, 500, appErrFromException("1010", e)); }
     }
     // ---- 人物面板：手动保存（用户编辑）----
     if (req.method === "POST" && path === "/api/panel/save") {
       const { bookId, panel } = await body(req);
-      if (!bookId || !panel) return sendJson(res, 400, { error: "参数错误" });
+      if (!bookId || !panel) return sendJson(res, 400, appErr("E108"));
       await writePanel(bookId, panel);
       return sendJson(res, 200, { ok: true });
     }
@@ -1273,10 +1692,37 @@ const server = createServer(async (req, res) => {
       out.sort((a, b) => String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")));
       return sendJson(res, 200, { books: out });
     }
+    // ---- 项目：重命名（仅改显示名，不动目录与正文）----
+    if (req.method === "POST" && path === "/api/book/rename") {
+      const { bookId, title } = await body(req);
+      const t = String(title || "").trim();
+      if (!bookId || !t) return sendJson(res, 400, appErr("E102"));
+      try {
+        const state = new StateManager(DATA_ROOT);
+        const book = await state.loadBookConfig(bookId);
+        book.title = t;
+        book.updatedAt = new Date().toISOString();
+        await state.saveBookConfig(bookId, book);
+        return sendJson(res, 200, { ok: true, book });
+      } catch (e) {
+        return sendJson(res, 500, appErrFromException("E500", e));
+      }
+    }
+    // ---- 项目：删除（移除本地书目录）----
+    if (req.method === "POST" && path === "/api/book/delete") {
+      const { bookId } = await body(req);
+      if (!bookId) return sendJson(res, 400, appErr("E102"));
+      const bookDir = join(DATA_ROOT, "books", bookId);
+      if (!existsSync(bookDir)) return sendJson(res, 404, appErr("E108"));
+      const job = autoJobs.get(bookId);
+      if (job) { job.stop = true; autoJobs.delete(bookId); }
+      await rm(bookDir, { recursive: true, force: true });
+      return sendJson(res, 200, { ok: true });
+    }
     // ---- 恢复某本书的全部进度（设定 + 章纲 + 已写章节）----
     if (req.method === "GET" && path === "/api/resume") {
       const bookId = url.searchParams.get("bookId");
-      if (!bookId) return sendJson(res, 400, { error: "缺少 bookId" });
+      if (!bookId) return sendJson(res, 400, appErr("E102"));
       try {
         const book = await new StateManager(DATA_ROOT).loadBookConfig(bookId);
         const foundation = await readFoundation(bookId);
@@ -1293,7 +1739,7 @@ const server = createServer(async (req, res) => {
         }
         return sendJson(res, 200, { book, foundation, outlines, total, chapters });
       } catch (e) {
-        return sendJson(res, 500, { error: String(e?.message ?? e) });
+        return sendJson(res, 500, appErrFromException("E500", e));
       }
     }
 
@@ -1303,10 +1749,11 @@ const server = createServer(async (req, res) => {
       return sendJson(res, 200, { total: await chapterCount(bookId) });
     }
 
-    res.writeHead(404); res.end("no route");
+    res.writeHead(404, { "Content-Type": "application/json; charset=utf-8" });
+    res.end(JSON.stringify(appErr("E109")));
   } catch (e) {
     console.error(e);
-    if (!res.headersSent) sendJson(res, 500, { error: String(e?.message ?? e) });
+    if (!res.headersSent) sendJson(res, 500, appErrFromException("E500", e));
     else try { res.end(); } catch { /* */ }
   }
 });
@@ -1345,4 +1792,5 @@ async function rollbackRuntimeState(bookId, keep) {
 }
 
 seedSkills().catch(() => {});
-server.listen(PORT, () => console.log(`jace 开源小说生成器 运行在 http://localhost:${PORT}`));
+syncErrorCatalogJs();
+server.listen(PORT, () => console.log(`网文小说生成器（作者 Jace）运行在 http://localhost:${PORT}`));

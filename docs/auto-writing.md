@@ -1,5 +1,7 @@
 # 自动写作（后台本地任务）
 
+> 网文小说生成器 · 作者 **Jace** · MIT
+
 自动连写跑在本机 `server.mjs` 进程里，**不是**跑在浏览器标签里。关掉网页 ≠ 停任务；关掉 Node 服务才会停。
 
 ## 前提
@@ -8,27 +10,32 @@
 2. 已在「设置 → 模型服务」配好 API Key
 3. 在「设置 → 自动写作配置」设好停止条件（写到第几章、跑几小时、额度不足是否停）
 
-## 启停命令
+## 推荐：下载脚本执行
 
-在项目根目录：
+打开 **设置 → 自动写作配置 → 下载脚本**：
+
+1. **系统**：下拉选 Windows 或 macOS（打开时会按当前电脑预填）
+2. **脚本用途**：开始自动连写 / 查看进度 / 停止当前任务 / 防止电脑休眠（Windows 另有「恢复休眠设置」）
+3. 可选填写书目录名，或点「填入当前书」；留空 = 最近修改的一本
+4. 点 **下载脚本**，按页面说明运行即可
+
+脚本通过 `http://localhost:<端口>` 调本机 API，不依赖你是否开着网页。
+
+### Windows（.ps1）
+
+- 右键 →「使用 PowerShell 运行」
+- 若被拦截：`powershell -ExecutionPolicy Bypass -File .\文件名.ps1`
+- 「防止电脑休眠 / 恢复休眠」需**管理员** PowerShell
+
+### macOS（.sh）
 
 ```bash
-npm start                 # 启动服务（关网页也要留着这个进程）
-npm run auto:start        # 对「最近修改的一本书」开始自动连写
-npm run auto:status       # 查看进度
-npm run auto:stop         # 停止当前自动任务
-npm run auto:watch        # 看门狗巡检（卡住/异常时尝试自愈）
+chmod +x 文件名.sh && ./文件名.sh
+# 或
+bash 文件名.sh
 ```
 
-指定某一本（目录名 = `data/books/` 下的文件夹名）：
-
-```bash
-node auto-ctl.mjs start "开局奶妈,boss血怎么又满了"
-node auto-ctl.mjs stop  "开局奶妈,boss血怎么又满了"
-node auto-ctl.mjs status "开局奶妈,boss血怎么又满了"
-```
-
-网页里：打开作品 →「自动写到完本」/「停止自动写作」，效果与上面命令相同。
+「防止电脑休眠」会一直占着终端（`caffeinate`），`Ctrl+C` 结束即恢复。
 
 ## 停止条件（设置中心）
 
@@ -41,34 +48,21 @@ node auto-ctl.mjs status "开局奶妈,boss血怎么又满了"
 
 章数、每章字数只在**建书**时设定，不在这里改。
 
-## 防休眠
+## 高级：命令行 / 看门狗
 
-笔记本一休眠，Node 进程会被挂起，任务等于停住。
-
-### Windows
-
-管理员 PowerShell：
-
-```powershell
-# 开启：插入电源时不睡眠、不休眠（显示器仍可关）
-powershell -File scripts/keep-awake-win.ps1
-
-# 恢复系统默认电源策略
-powershell -File scripts/keep-awake-win.ps1 -Off
-```
-
-也可：设置 → 系统 → 电源 → 屏幕和睡眠 → 插电时设为「从不」。
-
-### macOS
+开发或自动化仍可用（一般用户不必）：
 
 ```bash
-bash scripts/keep-awake-mac.sh
+npm run auto:start
+npm run auto:status
+npm run auto:stop
+npm run auto:watch   # 卡住/异常时尝试自愈
 ```
 
-运行期间用 `caffeinate` 阻止休眠；`Ctrl+C` 结束脚本即恢复。
+指定书：`node auto-ctl.mjs start "书目录名"`。
 
 ## 注意
 
-- 只关浏览器可以；**不要关**跑 `npm start` 的终端（除非你用 `Start-Process`/服务方式托管）。
-- 电脑重启后需重新 `npm start`，再 `npm run auto:start`。
-- 看门狗 `auto:watch` 适合挂计划任务/cron，不是必须。
+- 只关浏览器可以；**不要关**跑 `npm start` 的终端。
+- 电脑重启后需重新 `npm start`，再下载「开始自动连写」或网页里点开始。
+- 笔记本请接电源，并配合「防止电脑休眠」脚本，避免系统睡眠挂起任务。

@@ -1,17 +1,29 @@
 # 依赖
 node_modules/
 
-# 用户密钥与运行时配置（绝不提交）
+# ─── 绝不可上传的本机敏感 / 运行时数据 ───
+# API Key 与 LLM 配置
 data/config.json
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+credentials*.json
+secrets/
+
+# 用户题材 / 写作策略 / 自定义技能 / 分阶段模型覆盖（可能含个人内容）
 data/genres.json
 data/writing-config.json
+data/model-config.json
 data/skills/
-.env
 
-# 生成的作品数据与运行时状态
+# 生成的作品与运行时状态（含 prompt 留存、正文）
 data/books/
+**/user-inputs.jsonl
+**/autowatch.json
 
-# 日志与看门狗快照
+# 日志
 *.log
 server.err.log
 server.log
@@ -19,6 +31,13 @@ start.out.log
 start.err.log
 autowatch.json
 
-# 系统
+# 编辑器 / 系统
 .DS_Store
 Thumbs.db
+.idea/
+.vscode/
+*.swp
+*~
+
+# 本地设计系统缓存（可选，不含密钥但体积大）
+# design-system/
