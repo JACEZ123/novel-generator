@@ -6,7 +6,8 @@ import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const DATA = join(HERE, "data", "books");
-const BASE = "http://localhost:4568";
+const PORT = process.env.NOVEL_PORT || 4568;
+const BASE = `http://localhost:${PORT}`;
 const SNAP = join(HERE, "autowatch.json");
 const STALL_SEC = 1800;   // 30 分钟无进展视为卡住
 const MAX_FAILS = 3;      // 同一章连续失败上限

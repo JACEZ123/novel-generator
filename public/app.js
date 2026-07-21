@@ -369,13 +369,15 @@ async function saveGenres() {
   } else { el.style.color = "var(--warn)"; el.textContent = "保存失败：" + (d.error || ""); }
 }
 
-// ---------- 分区：自动写作配置 ----------
+// ---------- 分区：自动写作配置（后台任务停止条件）----------
 async function loadWritingSection() {
   try {
     const d = await (await fetch("/api/writing-config")).json();
     const c = d.config || {};
-    $("wr-target").value = c.targetChapters ?? 200;
-    $("wr-words").value = c.chapterWordCount ?? 3000;
+    $("wr-stop-ch").value = c.stopAtChapter ?? 0;
+    $("wr-stop-hours").value = c.stopAfterHours ?? 0;
+    $("wr-stop-token").checked = c.stopOnTokenError !== false;
+    $("wr-stop-quota").checked = c.stopOnQuotaError !== false;
     $("wr-oaudit").value = c.outlineAuditMaxRounds ?? 2;
     $("wr-review").value = c.autoReviewMaxRounds ?? 3;
     $("wr-hint").textContent = "";
@@ -383,14 +385,16 @@ async function loadWritingSection() {
 }
 async function saveWritingConfig() {
   const config = {
-    targetChapters: Number($("wr-target").value),
-    chapterWordCount: Number($("wr-words").value),
+    stopAtChapter: Number($("wr-stop-ch").value),
+    stopAfterHours: Number($("wr-stop-hours").value),
+    stopOnTokenError: $("wr-stop-token").checked,
+    stopOnQuotaError: $("wr-stop-quota").checked,
     outlineAuditMaxRounds: Number($("wr-oaudit").value),
     autoReviewMaxRounds: Number($("wr-review").value),
   };
   const d = await (await fetch("/api/writing-config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ config }) })).json();
   const el = $("wr-hint");
-  if (d.ok) { el.style.color = "var(--acc-d)"; el.textContent = "✅ 已保存"; }
+  if (d.ok) { el.style.color = "var(--acc-d)"; el.textContent = "✅ 已保存（对之后启动的自动任务生效）"; }
   else { el.style.color = "var(--warn)"; el.textContent = "保存失败"; }
 }
 async function resumeBook(idEnc) {
@@ -644,18 +648,19 @@ async function openSettings(kind) {
   const wWrap = $("f-words")?.parentElement?.querySelector("label");
   if (tWrap) tWrap.textContent = kind === "script" ? "目标场数" : "目标章数";
   if (wWrap) wWrap.textContent = kind === "script" ? "每场字数" : "每章字数";
-  // 题材下拉与默认章数/字数来自「题材设置」「自动写作配置」
+  // 建书表单默认章数/字数：剧本略小；不读「自动写作配置」（那是任务停止条件）
   try {
-    const [g, w] = await Promise.all([
-      (await fetch("/api/genres")).json(),
-      (await fetch("/api/writing-config")).json(),
-    ]);
+    const g = await (await fetch("/api/genres")).json();
     if (Array.isArray(g.genres) && g.genres.length) {
       $("f-genre").innerHTML = g.genres.map((x) => `<option value="${esc(x.id)}">${esc(x.label)}</option>`).join("");
     }
-    const c = w.config || {};
-    if (c.targetChapters) $("f-target").value = kind === "script" ? Math.min(c.targetChapters, 60) : c.targetChapters;
-    if (c.chapterWordCount) $("f-words").value = kind === "script" ? Math.min(c.chapterWordCount, 1500) : c.chapterWordCount;
+    if (kind === "script") {
+      $("f-target").value = 40;
+      $("f-words").value = 1200;
+    } else {
+      $("f-target").value = 200;
+      $("f-words").value = 3000;
+    }
   } catch { /* 用页面默认 */ }
   openModal("m-settings");
 }

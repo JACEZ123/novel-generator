@@ -170,18 +170,34 @@ function genreGuide(genreId) {
   return g?.guide || "";
 }
 
-// ---------- 自动写作配置：全局默认与运行时轮数 ----------
+// ---------- 自动写作任务配置（后台连写的停止条件；章数/字数在建书时定）----------
 const WRITING_CFG_PATH = join(DATA_ROOT, "writing-config.json");
 const DEFAULT_WRITING = {
-  targetChapters: 200,        // 建书默认目标章数
-  chapterWordCount: 3000,     // 建书默认每章字数
-  outlineAuditMaxRounds: 2,   // 章纲结构审计最多修订轮数
-  autoReviewMaxRounds: 3,     // 正文自动审改最多轮数
+  stopAtChapter: 0,           // 写到第 N 章（含）停止；0 = 用该书建书时的 targetChapters
+  stopAfterHours: 0,          // 运行满 N 小时停止；0 = 不限时
+  stopOnTokenError: true,     // API 报 token/余额不足时停止
+  stopOnQuotaError: true,     // 配额/限流类致命错误时停止（与上一项可合并检测）
+  outlineAuditMaxRounds: 2,   // 章纲结构审计最多修订轮数（流水线参数）
+  autoReviewMaxRounds: 3,     // 正文自动审改最多轮数（流水线参数）
 };
 function loadWritingConfig() {
   let c = { ...DEFAULT_WRITING };
-  try { if (existsSync(WRITING_CFG_PATH)) c = { ...c, ...JSON.parse(readFileSync(WRITING_CFG_PATH, "utf8")) }; } catch { /* ignore */ }
+  try {
+    if (existsSync(WRITING_CFG_PATH)) {
+      const raw = JSON.parse(readFileSync(WRITING_CFG_PATH, "utf8"));
+      c = { ...c, ...raw };
+    }
+  } catch { /* ignore */ }
+  // 兼容旧字段：不再用于自动任务，仅忽略
+  delete c.targetChapters;
+  delete c.chapterWordCount;
   return c;
+}
+
+/** 判断是否为「额度/Token 不足」类错误——应停止自动任务，不要空转重试 */
+function isFatalApiCreditError(err) {
+  const s = String(err?.message ?? err ?? "").toLowerCase();
+  return /insufficient|quota|billing|余额|额度|token.*(不足|用尽|超)|exceeded.*token|payment|预扣费|402|403.*额度|credit|balance/.test(s);
 }
 
 // ---------- Skills：data/skills/<组>/*.md，全部可查看/编辑，pipeline 组运行时真实生效 ----------
@@ -535,42 +551,87 @@ async function runAutoLoop(bookId, job) {
   try {
     const state = new StateManager(DATA_ROOT);
     const book = await state.loadBookConfig(bookId);
-    const target = book.targetChapters ?? 200;
-    while (!job.stop && (await chapterCount(bookId)) < target) {
-      const targetN = (await chapterCount(bookId)) + 1;
+    const cfg = loadWritingConfig();
+    const bookTarget = book.targetChapters ?? 200;
+    const stopAt = (cfg.stopAtChapter > 0) ? cfg.stopAtChapter : bookTarget;
+    const maxMs = (cfg.stopAfterHours > 0) ? cfg.stopAfterHours * 3600 * 1000 : 0;
+    job.stopAt = stopAt;
+    job.stopAfterHours = cfg.stopAfterHours || 0;
+
+    while (!job.stop) {
+      const total = await chapterCount(bookId);
+      if (total >= stopAt) {
+        job.completed = true;
+        prog(job, `⏹ 已写到第 ${total} 章（停止条件：写到第 ${stopAt} 章），任务结束。`);
+        break;
+      }
+      if (maxMs > 0 && Date.now() - job.startedAt >= maxMs) {
+        job.error = `已运行约 ${cfg.stopAfterHours} 小时，按「限时停止」结束（当前第 ${total} 章）。`;
+        prog(job, `⏱ ${job.error}`);
+        break;
+      }
+
+      const targetN = total + 1;
       job.current = targetN;
       // 进入新一组（6/11/16…）且该组章纲缺失 → 先生成+审计该组
       if (targetN > 5 && targetN % 5 === 1) {
         const outs = await loadChapterOutlines(bookId);
         if (!outs.some((o) => o.n === targetN)) {
           prog(job, `📋 生成并审计第 ${targetN}-${targetN + 4} 章章纲…`);
-          const { outlines } = await generateOutlines(bookId, targetN, 5, "");
-          const prev = (await loadChapterOutlines(bookId)).filter((o) => o.n < targetN || o.n >= targetN + 5);
-          await saveChapterOutlines(bookId, [...prev, ...outlines].sort((a, b) => a.n - b.n));
-          let r2 = 0, aud;
-          const maxOl = loadWritingConfig().outlineAuditMaxRounds || 2;
-          while (r2 < maxOl && !job.stop) { r2++; aud = await auditOutlineGroup(bookId, targetN, 5); prog(job, `🔎 章纲第 ${r2} 轮审计：${aud.passed ? "合格" : "修订中"}`); if (aud.passed) break; await reviseOutlineGroup(bookId, targetN, 5, aud.raw); }
-          const all2 = await loadChapterOutlines(bookId);
-          all2.forEach((o) => { if (o.n >= targetN && o.n < targetN + 5) { o.audited = true; o.confirmed = true; } });
-          await saveChapterOutlines(bookId, all2);
+          try {
+            const { outlines } = await generateOutlines(bookId, targetN, 5, "");
+            const prev = (await loadChapterOutlines(bookId)).filter((o) => o.n < targetN || o.n >= targetN + 5);
+            await saveChapterOutlines(bookId, [...prev, ...outlines].sort((a, b) => a.n - b.n));
+            let r2 = 0, aud;
+            const maxOl = cfg.outlineAuditMaxRounds || 2;
+            while (r2 < maxOl && !job.stop) {
+              r2++;
+              aud = await auditOutlineGroup(bookId, targetN, 5);
+              prog(job, `🔎 章纲第 ${r2} 轮审计：${aud.passed ? "合格" : "修订中"}`);
+              if (aud.passed) break;
+              await reviseOutlineGroup(bookId, targetN, 5, aud.raw);
+            }
+            const all2 = await loadChapterOutlines(bookId);
+            all2.forEach((o) => { if (o.n >= targetN && o.n < targetN + 5) { o.audited = true; o.confirmed = true; } });
+            await saveChapterOutlines(bookId, all2);
+          } catch (e) {
+            if ((cfg.stopOnTokenError || cfg.stopOnQuotaError) && isFatalApiCreditError(e)) {
+              job.error = `额度/Token 不足，已停止：${e.message || e}`;
+              prog(job, `💳 ${job.error}`);
+              break;
+            }
+            throw e;
+          }
         }
       }
       if (job.stop) break;
       const ol = (await loadChapterOutlines(bookId)).find((o) => o.n === targetN);
       const olCtx = ol ? `【本章章纲（用户已确认，须遵循）】\n第${ol.n}章 ${ol.title}\n核心事件：${ol.summary}\n梗概：${ol.detail}` : undefined;
       prog(job, `✍ 自动写作第 ${targetN} 章${ol ? "（按已确认章纲）" : ""}…`);
-      const runner = makeRunner({ reviewMode: "auto", externalContext: olCtx, onStage: (s) => { prog(job, friendlyStage(s.msg || "")); } });
-      const r = await runner.writeNextChapter(bookId);
-      if (job.stop) break;
-      await commitPanel(bookId, r.chapterNumber).catch(() => {}); // 网游面板：本章后更新
-      prog(job, `已完成第 ${r.chapterNumber} 章（${r.status}）`);
-      if (r.status === "state-degraded") { job.error = `第${r.chapterNumber}章 state 降级，已停止`; break; }
+      try {
+        const runner = makeRunner({ reviewMode: "auto", externalContext: olCtx, onStage: (s) => { prog(job, friendlyStage(s.msg || "")); } });
+        const r = await runner.writeNextChapter(bookId);
+        if (job.stop) break;
+        await commitPanel(bookId, r.chapterNumber).catch(() => {});
+        prog(job, `已完成第 ${r.chapterNumber} 章（${r.status}）`);
+        if (r.status === "state-degraded") { job.error = `第${r.chapterNumber}章 state 降级，已停止`; break; }
+      } catch (e) {
+        if ((cfg.stopOnTokenError || cfg.stopOnQuotaError) && isFatalApiCreditError(e)) {
+          job.error = `额度/Token 不足，已停止：${e.message || e}`;
+          prog(job, `💳 ${job.error}`);
+          break;
+        }
+        throw e;
+      }
     }
     const finalCount = await chapterCount(bookId);
-    job.completed = finalCount >= target;
-    prog(job, job.error ? job.msg : (job.stop ? "已手动停止。" : "🎉 全书写作完成。"));
+    if (!job.error && !job.stop && finalCount >= stopAt) job.completed = true;
+    if (!job.msg || job.running) {
+      prog(job, job.error ? job.msg : (job.stop ? "已手动停止。" : (job.completed ? `🎉 已达停止章数（${finalCount}/${stopAt}）。` : "任务结束。")));
+    }
   } catch (e) {
     job.error = String(e?.message ?? e);
+    prog(job, `❌ ${job.error}`);
   } finally {
     job.running = false; job.done = true; job.endedAt = Date.now();
   }
@@ -950,10 +1011,25 @@ const server = createServer(async (req, res) => {
       const bookId = url.searchParams.get("bookId");
       const job = autoJobs.get(bookId);
       const total = await chapterCount(bookId);
-      let target = 0; try { target = (await new StateManager(DATA_ROOT).loadBookConfig(bookId)).targetChapters ?? 0; } catch { /* */ }
-      if (!job) return sendJson(res, 200, { running: false, total, target, completed: target ? total >= target : false });
+      const cfg = loadWritingConfig();
+      let bookTarget = 0;
+      try { bookTarget = (await new StateManager(DATA_ROOT).loadBookConfig(bookId)).targetChapters ?? 0; } catch { /* */ }
+      const stopAt = (cfg.stopAtChapter > 0) ? cfg.stopAtChapter : bookTarget;
+      if (!job) {
+        return sendJson(res, 200, {
+          running: false, total, target: stopAt, bookTarget,
+          stopAtChapter: cfg.stopAtChapter || 0, stopAfterHours: cfg.stopAfterHours || 0,
+          completed: stopAt ? total >= stopAt : false,
+        });
+      }
       const stalledSec = job.running ? Math.round((Date.now() - (job.lastProgressAt || job.startedAt)) / 1000) : 0;
-      return sendJson(res, 200, { running: job.running, current: job.current, msg: job.msg, error: job.error, done: job.done, completed: !!job.completed, total, target, stalledSec });
+      const ranHours = job.startedAt ? +((Date.now() - job.startedAt) / 3600000).toFixed(2) : 0;
+      return sendJson(res, 200, {
+        running: job.running, current: job.current, msg: job.msg, error: job.error,
+        done: job.done, completed: !!job.completed, total, target: job.stopAt || stopAt, bookTarget,
+        stopAtChapter: cfg.stopAtChapter || 0, stopAfterHours: cfg.stopAfterHours || 0,
+        ranHours, stalledSec,
+      });
     }
     // ---- 自动连写：停止 ----
     if (req.method === "POST" && path === "/api/auto/stop") {
@@ -1058,8 +1134,13 @@ const server = createServer(async (req, res) => {
       const cur = loadWritingConfig();
       const next = { ...cur };
       const num = (v, min, max, d) => { const n = Number(v); return Number.isFinite(n) ? Math.min(max, Math.max(min, Math.round(n))) : d; };
-      if (config?.targetChapters != null) next.targetChapters = num(config.targetChapters, 1, 100000, cur.targetChapters);
-      if (config?.chapterWordCount != null) next.chapterWordCount = num(config.chapterWordCount, 300, 20000, cur.chapterWordCount);
+      if (config?.stopAtChapter != null) next.stopAtChapter = num(config.stopAtChapter, 0, 100000, cur.stopAtChapter);
+      if (config?.stopAfterHours != null) {
+        const h = Number(config.stopAfterHours);
+        next.stopAfterHours = Number.isFinite(h) ? Math.min(720, Math.max(0, h)) : cur.stopAfterHours;
+      }
+      if (config?.stopOnTokenError != null) next.stopOnTokenError = !!config.stopOnTokenError;
+      if (config?.stopOnQuotaError != null) next.stopOnQuotaError = !!config.stopOnQuotaError;
       if (config?.outlineAuditMaxRounds != null) next.outlineAuditMaxRounds = num(config.outlineAuditMaxRounds, 0, 5, cur.outlineAuditMaxRounds);
       if (config?.autoReviewMaxRounds != null) next.autoReviewMaxRounds = num(config.autoReviewMaxRounds, 1, 8, cur.autoReviewMaxRounds);
       await mkdir(DATA_ROOT, { recursive: true }).catch(() => {});

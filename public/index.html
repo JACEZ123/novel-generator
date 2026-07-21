@@ -469,21 +469,58 @@
         </div>
       </div>
 
-      <!-- 自动写作配置 -->
+      <!-- 自动写作配置（后台本地任务） -->
       <div id="hub-writing" class="hub-sec hidden">
         <h3 class="sec-t">自动写作配置</h3>
-        <p class="sec-d">建书默认值与自动流程的轮数上限（对之后新建的书与后续写作生效）。</p>
+        <p class="sec-d">这里管的是<strong>后台本地任务</strong>怎么跑、怎么停——不是建书时的章数/字数（那是在「开始创作」里定的）。任务跑在本机 <code>server.mjs</code> 进程里，<strong>关掉网页也会继续</strong>；关掉的是浏览器标签，不是 Node 服务。</p>
+
+        <h4 style="margin:14px 0 8px;font-size:14px">停止条件</h4>
         <div class="row">
-          <div><label>默认目标章数</label><input id="wr-target" type="number" min="1" /></div>
-          <div><label>默认每章字数</label><input id="wr-words" type="number" min="300" /></div>
+          <div><label>写到第 N 章停止（0 = 用该书建书时的目标章数）</label><input id="wr-stop-ch" type="number" min="0" placeholder="0" /></div>
+          <div><label>连续运行满 N 小时停止（0 = 不限时）</label><input id="wr-stop-hours" type="number" min="0" step="0.5" placeholder="0" /></div>
         </div>
-        <div class="row" style="margin-top:6px">
+        <label style="display:flex;align-items:center;gap:8px;margin:10px 0 6px">
+          <input type="checkbox" id="wr-stop-token" style="width:auto" /> API 报 Token / 余额不足时立即停止
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;margin:0 0 12px">
+          <input type="checkbox" id="wr-stop-quota" style="width:auto" /> 配额 / 预扣费失败等额度错误时立即停止
+        </label>
+
+        <h4 style="margin:14px 0 8px;font-size:14px">流水线（可选）</h4>
+        <div class="row">
           <div><label>章纲结构审计最多修订轮数（0-5）</label><input id="wr-oaudit" type="number" min="0" max="5" /></div>
           <div><label>正文自动审改最多轮数（1-8）</label><input id="wr-review" type="number" min="1" max="8" /></div>
         </div>
+
         <div class="toolbar" style="margin-top:14px">
           <button class="primary" onclick="saveWritingConfig()">保存自动写作配置</button>
           <span class="hint" id="wr-hint" style="margin:0"></span>
+        </div>
+
+        <h4 style="margin:22px 0 8px;font-size:14px">怎么用后台任务</h4>
+        <div class="foundation" style="margin:0">
+          <section><h4>关网页也能跑</h4><div style="padding:12px 14px;line-height:1.8;font-size:13px">
+            1. 先启动服务：<code>npm start</code>（或 <code>node server.mjs</code>），保持这个终端/进程不要关。<br>
+            2. 浏览器里打开作品 → 点「自动写到完本」；或命令行：<code>npm run auto:start</code><br>
+            3. 此时可以关掉浏览器标签，任务仍在本机 Node 里跑。<br>
+            4. 查进度：<code>npm run auto:status</code>　停止：<code>npm run auto:stop</code>
+          </div></section>
+          <section><h4>常用命令</h4><div style="padding:12px 14px;line-height:1.8;font-size:13px">
+            <pre style="margin:0;white-space:pre-wrap;font-size:12px">npm start                 # 启动本机服务（关网页也要留着）
+npm run auto:start        # 后台开始自动连写（最近一本）
+npm run auto:status       # 看进度
+npm run auto:stop         # 停止当前自动任务
+npm run auto:watch        # 看门狗：卡住/异常时尝试自愈
+node auto-ctl.mjs stop "书名目录"   # 指定某一本停止</pre>
+          </div></section>
+          <section><h4>防止电脑休眠（否则任务会停）</h4><div style="padding:12px 14px;line-height:1.8;font-size:13px">
+            Windows（管理员 PowerShell，防休眠至你取消）：<br>
+            <code>powershell -File scripts/keep-awake-win.ps1</code><br>
+            取消：<code>powershell -File scripts/keep-awake-win.ps1 -Off</code><br><br>
+            macOS：<br>
+            <code>bash scripts/keep-awake-mac.sh</code>（运行期间不休眠；Ctrl+C 结束）<br><br>
+            或系统设置里临时关闭「睡眠 / 盖上盖子睡眠」。更完整说明见 <code>docs/auto-writing.md</code>。
+          </div></section>
         </div>
       </div>
 

@@ -55,12 +55,17 @@ NOVEL_API_KEY=sk-xxxx npm start
 
 ## 后台自动连写 / 看门狗
 
+任务跑在本机 `server.mjs` 进程里，**关掉网页也会继续**。停止条件在「设置 → 自动写作配置」里设（写到第几章、跑几小时、额度不足是否停）。详见 [docs/auto-writing.md](./docs/auto-writing.md)。
+
 ```bash
-npm run auto:start
-npm run auto:status
-npm run auto:watch
-npm run auto:stop
+npm start                 # 先启动服务并保持运行
+npm run auto:start        # 后台开始自动写（最近一本）
+npm run auto:status       # 查看进度
+npm run auto:watch        # 看门狗：卡住/停止时尝试自愈
+npm run auto:stop         # 停止
 ```
+
+防休眠脚本：`scripts/keep-awake-win.ps1`、`scripts/keep-awake-mac.sh`。
 
 ## 目录
 
