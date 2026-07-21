@@ -229,44 +229,74 @@ async function saveConfig() {
   } catch (e) { $("cfg-hint").textContent = "保存失败：" + e; }
 }
 
-// ---------- 分区：Skills 技能管理（data/skills/*.md）----------
+// ---------- 分区：Skills 技能管理（data/skills/<组>/*.md）----------
 async function loadSkillsSection() {
-  try { const d = await (await fetch("/api/skills")).json(); S.skills = d.skills || []; }
-  catch { S.skills = []; }
-  S.skillSel = null;
+  try { const d = await (await fetch("/api/skills")).json(); S.skillGroups = d.groups || []; }
+  catch { S.skillGroups = []; }
+  S.skillSel = null; S.skillSelGroup = null;
   $("sk-name").value = ""; $("sk-content").value = ""; $("sk-hint").textContent = "";
+  $("sk-reset").classList.add("hidden");
   renderSkillList();
 }
 function renderSkillList() {
   const q = ($("sk-search").value || "").trim();
-  const items = (S.skills || []).filter((n) => !q || n.includes(q));
   const list = $("sk-list");
-  if (!items.length) { list.innerHTML = `<div class="sk-empty">${(S.skills || []).length ? "无匹配" : "还没有技能，点上方「新建技能」"}</div>`; return; }
-  list.innerHTML = items.map((n) => `<div class="sk-item ${n === S.skillSel ? "sel" : ""}" onclick="selectSkill('${encodeURIComponent(n)}')">📄 ${esc(n)}</div>`).join("");
+  const groups = S.skillGroups || [];
+  let html = "";
+  for (const g of groups) {
+    const items = (g.skills || []).filter((n) => !q || n.includes(q));
+    if (!items.length && q) continue;
+    html += `<div class="sk-item" style="cursor:default;background:#fafbfb;font-weight:700;color:var(--acc-d)">📁 ${esc(g.label)}</div>`;
+    html += items.map((n) => `<div class="sk-item ${g.id === S.skillSelGroup && n === S.skillSel ? "sel" : ""}" onclick="selectSkill('${g.id}','${encodeURIComponent(n)}')" style="padding-left:26px">📄 ${esc(n)}</div>`).join("");
+    if (!items.length) html += `<div class="sk-item" style="padding-left:26px;color:var(--muted);cursor:default">（空）</div>`;
+  }
+  list.innerHTML = html || `<div class="sk-empty">暂无技能</div>`;
 }
-async function selectSkill(enc) {
+async function selectSkill(group, enc) {
   const name = decodeURIComponent(enc);
   try {
-    const d = await (await fetch(`/api/skill?name=${encodeURIComponent(name)}`)).json();
-    S.skillSel = d.name; $("sk-name").value = d.name; $("sk-content").value = d.content || "";
-    $("sk-hint").textContent = ""; renderSkillList();
+    const d = await (await fetch(`/api/skill?group=${encodeURIComponent(group)}&name=${encodeURIComponent(name)}`)).json();
+    S.skillSel = d.name; S.skillSelGroup = d.group;
+    $("sk-name").value = d.name; $("sk-content").value = d.content || "";
+    $("sk-reset").classList.toggle("hidden", !d.hasDefault);
+    $("sk-hint").style.color = "var(--muted)";
+    $("sk-hint").textContent = d.builtin ? "内置技能：可直接修改，保存后立即生效；「恢复默认」可还原" : "";
+    renderSkillList();
   } catch { /* ignore */ }
 }
-function newSkill() { S.skillSel = null; $("sk-name").value = ""; $("sk-content").value = ""; $("sk-hint").textContent = "新建技能：填名称与内容后保存"; renderSkillList(); }
+function newSkill() {
+  S.skillSel = null; S.skillSelGroup = "custom";
+  $("sk-name").value = ""; $("sk-content").value = "";
+  $("sk-reset").classList.add("hidden");
+  $("sk-hint").style.color = "var(--muted)";
+  $("sk-hint").textContent = "新建自定义技能：填名称与内容后保存";
+  renderSkillList();
+}
 async function saveSkill() {
   const name = $("sk-name").value.trim();
   if (!name) { $("sk-hint").textContent = "请填技能名称"; return; }
-  const d = await (await fetch("/api/skill/save", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, content: $("sk-content").value }) })).json();
-  if (d.ok) { $("sk-hint").style.color = "var(--acc-d)"; $("sk-hint").textContent = "✅ 已保存"; S.skillSel = d.name; await loadSkillsList(); }
+  const group = S.skillSelGroup || "custom";
+  const d = await (await fetch("/api/skill/save", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ group, name, content: $("sk-content").value }) })).json();
+  if (d.ok) { $("sk-hint").style.color = "var(--acc-d)"; $("sk-hint").textContent = "✅ 已保存（写作流程组的修改立即生效）"; S.skillSel = d.name; S.skillSelGroup = d.group; await refreshSkillGroups(); }
   else { $("sk-hint").style.color = "var(--warn)"; $("sk-hint").textContent = "保存失败：" + (d.error || ""); }
 }
-async function loadSkillsList() { try { const d = await (await fetch("/api/skills")).json(); S.skills = d.skills || []; } catch { /* */ } renderSkillList(); }
+async function refreshSkillGroups() { try { const d = await (await fetch("/api/skills")).json(); S.skillGroups = d.groups || []; } catch { /* */ } renderSkillList(); }
+async function resetSkill() {
+  const name = $("sk-name").value.trim();
+  if (!name || !S.skillSelGroup) return;
+  if (!confirm(`把「${name}」恢复为内置默认内容？你的修改将被覆盖。`)) return;
+  const d = await (await fetch("/api/skill/reset", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ group: S.skillSelGroup, name }) })).json();
+  if (d.ok) { $("sk-content").value = d.content; $("sk-hint").style.color = "var(--acc-d)"; $("sk-hint").textContent = "✅ 已恢复默认"; }
+  else { $("sk-hint").style.color = "var(--warn)"; $("sk-hint").textContent = d.error || "恢复失败"; }
+}
 async function deleteSkill() {
   const name = $("sk-name").value.trim();
-  if (!name || !(S.skills || []).includes(name)) { $("sk-hint").textContent = "该技能尚未保存"; return; }
-  if (!confirm(`删除技能「${name}」？`)) return;
-  await fetch("/api/skill/delete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) });
-  newSkill(); await loadSkillsList();
+  const group = S.skillSelGroup || "custom";
+  if (!name || !S.skillSel) { $("sk-hint").textContent = "请先选中一个技能"; return; }
+  const builtin = !$("sk-reset").classList.contains("hidden");
+  if (!confirm(builtin ? `「${name}」是内置技能，删除后会自动恢复默认内容。继续？` : `删除技能「${name}」？`)) return;
+  await fetch("/api/skill/delete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ group, name }) });
+  newSkill(); await refreshSkillGroups();
 }
 
 // ---------- 分区：题材设置 ----------

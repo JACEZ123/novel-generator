@@ -416,7 +416,7 @@
       <!-- Skills 技能管理 -->
       <div id="hub-skills" class="hub-sec hidden">
         <h3 class="sec-t">Skills 技能管理</h3>
-        <p class="sec-d">在这里维护你自己的技能片段（<code>data/skills/*.md</code>）：可存放固定写作规范、口头禅清单、禁用词、世界观补充等，供你复制进设定或写作意见时复用。<br><span style="color:var(--warn)">注：核心写作/审计的内置提示词由写作引擎（依赖）提供，不在此处，也不随本仓库分发。</span></p>
+        <p class="sec-d">全部技能都展示在这里，均可查看与修改（存于 <code>data/skills/</code>）。<b>写作流程（生效）</b>组是本应用真实使用的流程提示词，改完保存立即生效；<b>引擎能力（改写版）</b>组是引擎内置能力技能的自有改写版，供查看/复用；<b>自定义</b>组放你自己的片段。内置技能删除后会自动恢复默认。</p>
         <div class="sk-grid">
           <div>
             <input id="sk-search" placeholder="搜索技能名…" oninput="renderSkillList()" style="margin-bottom:8px" />
@@ -430,6 +430,7 @@
             <textarea id="sk-content" style="min-height:280px;font-family:var(--serif)" placeholder="在此编写技能内容…"></textarea>
             <div class="toolbar" style="margin-top:10px">
               <button class="primary" onclick="saveSkill()">保存</button>
+              <button id="sk-reset" class="hidden" onclick="resetSkill()">↺ 恢复默认</button>
               <button class="danger" onclick="deleteSkill()">删除</button>
               <span class="hint" id="sk-hint" style="margin:0"></span>
             </div>

@@ -165,9 +165,121 @@ function loadWritingConfig() {
   return c;
 }
 
-// ---------- 用户技能：data/skills/*.md（可查看/编辑的补充指令片段）----------
+// ---------- Skills：data/skills/<组>/*.md，全部可查看/编辑 ----------
+// pipeline = 写作流程 prompt（运行时真实生效）；engine = 引擎能力技能的自有改写版（参考/复用）；custom = 用户自定义片段。
+// 内置组（pipeline/engine）的文件被删除后，下次列出时自动恢复默认内容。
 const SKILLS_DIR = join(DATA_ROOT, "skills");
+const SKILL_GROUPS = [
+  { id: "pipeline", label: "写作流程（生效）" },
+  { id: "engine", label: "引擎能力（改写版）" },
+  { id: "custom", label: "自定义" },
+];
 const safeSkillName = (n) => String(n || "").replace(/[^\w.\- 一-鿿]/g, "").replace(/\.\.+/g, "").trim();
+const skillFilePath = (group, name) => join(SKILLS_DIR, group, `${safeSkillName(name)}.md`);
+
+// 内置技能默认内容（均为本仓库自有表述）。{{变量}} 在运行时替换。
+const DEFAULT_SKILLS = {
+  pipeline: {
+    "章纲生成": `你是这部长篇小说的章节策划。请依据故事框架、分卷卷纲和角色设定，为接下来的章节排出一段连贯、节奏有起伏、能推进当前卷目标的章纲。具体要求：
+- 紧扣卷纲的推进节点和角色当前状态，这 {{count}} 章里要有清晰的悬念钩子、逐步升级的冲突，并至少安排一个高潮爆点。
+- 每章的一句话总结要落到实处，写明"这一章到底发生了什么关键事件"，避免空泛。
+- 梗概写 3-5 句，交代场景、冲突、转折以及章末留给读者的钩子。
+- 只产出章纲，不要动笔写正文。`,
+    "章纲结构审计": `你是一名小说大纲的结构审校编辑。你要审的不是文笔，也不需要润色或重写，而是判断"连续 {{count}} 章的章纲"在结构上是否站得住：是否服务总纲、是否契合当前分卷目标、是否接得上上文、是否符合普通读者的阅读心理。
+
+先建立判断基准：总纲是整本书的顶层设计，决定主线、核心矛盾、长期目标与人物成长弧；分卷卷纲是阶段性目标，规定本卷要完成什么、推进到哪一步、如何过渡到下一卷；章纲则是把分卷目标拆成可执行的每章步骤，既要服务当前卷目标，又不能跑偏总纲方向。审的时候别只看"有没有剧情"，而要看每章是不是在对的位置做了对的事。
+
+请重点核查：1）是否服务总纲主线、核心矛盾与主角长期目标；2）是否吻合当前分卷目标；3）该章在本卷进程中的位置是否恰当；4）是否自然承接前文事件、人物状态、情绪与遗留问题，并顺势带出后文；5）是否尊重读者心理，别为了赶进度而跳过必要的反应、铺垫、准备、失败、代价与动机铺陈；6）内部因果是否层层递进，每章是否都有明确的结构功能；7）是否为后续埋好条件，有没有提前透支高潮或缺少铺垫的问题。
+
+输出请严格采用以下分节：
+【总体判断】合格 / 需要小修 / 需要大修 / 结构严重偏离。简述这几章的结构作用、是否契合总纲与分卷目标、以及最大的风险点。
+【位置审查】该章处在本卷哪个阶段；这个阶段本应完成什么；实际完成了什么；两者是否匹配。
+【承接与递进】前文承接、内部递进、后文衔接是否都成立。
+【读者心智问题】读者可能感到突兀、跳步、看不懂或不买账的地方。
+【审计意见】分"严重 / 警告 / 一般"三档给出（档位只能用这三个词）。每条写清：档位、问题、涉及章节、影响、建议。没有问题就写"未发现"，警告类最多 10 条。
+【结构调整建议】只给大纲层面的调整（前移 / 后移 / 补过渡 / 压缩 / 扩展 / 补动机 / 补铺垫），不要动正文。
+【需要作者确认】因资料不足而无法判断的地方。
+再次强调：只审结构不审文笔；不重写正文；不新增设定；资料不足就直说"资料不足，无法判断"。
+（注意：【总体判断】等节名供程序解析，请勿改名或删除）`,
+    "章纲修订": `你是一名小说大纲修订编辑。请依据"结构审计意见"来调整这连续 {{count}} 章的章纲，让它重新契合总纲、当前分卷目标、上文承接和读者心理。你只改大纲：不写正文、不润色文笔、不随意新增人物/势力/设定，也不改动总纲、分卷目标和已经发生过的剧情。
+
+采纳原则：标为"严重"的问题必须修正；标为"警告"的问题酌情采纳，若不采纳要说明理由；标为"一般"的问题仅供参考。确实资料不足的，标注"资料不足，无法修改"。
+
+改完后必须严格按下列格式输出修订后的章纲（要交给程序解析，不要夹带其它段落）：
+=== 第N章 ===
+标题：<不超过12字>
+一句话：<本章核心事件，一句话>
+梗概：<3-5句，含场景/冲突/转折/章末钩子>
+（每章一个 === 第N章 === 块，共 {{count}} 章，从第 {{startN}} 章开始，章号保持不变）`,
+    "人物面板更新": `你负责维护一部游戏/系统流小说主角的数值面板。请阅读本章正文，把其中真实发生的养成变化同步到面板上——包括升级、属性提升、拿到或替换装备、学会或强化技能、确定角色昵称等。
+
+请遵守以下约束：
+- 只根据正文里明确写出来的事件改动数值；正文没写到的条目一律维持原样。
+- 数值原则上只升不降，受伤、扣血、消耗这类正文明写的减少除外；等级与属性的增长幅度要和正文描述吻合。
+- 装备或技能有增删变动时，同步更新对应数组，名称尽量简短。
+- 最终必须只返回一个 JSON 对象，字段结构与传入面板保持一致：传入有哪些属性键就保留哪些键，不要擅自增删属性项；"生命""法力"这类"当前/上限"沿用 "85/120" 的字符串写法。equipment、skills 均为 [{name, effect}] 数组。不要附带任何解释文字，也不要用 markdown 代码块包裹。`,
+  },
+  engine: {
+    "能力-长篇连载写作": `【能力说明】长篇连载小说的完整生产能力：规划章纲 → 挑选本章所需上下文 → 写正文 → 连贯性审计 → 按意见修订，并全程守住前后一致性。
+【适用场景】长篇书稿、逐章推进、续写下一章、审稿修稿、伏笔与状态一致性维护、按作者意图驱动的写作。
+【触发词】长篇 / 章节 / 下一章 / 续写 / 审稿 / 修稿 / 伏笔
+【上下文优先级】作者意图、近期焦点、本章章纲备忘、世界观框架、卷纲当前段、活跃伏笔属于"受保护"信息，必须完整带入；更早的章节摘要与状态事实可压缩检索。`,
+    "能力-开放世界互动": `【能力说明】开放世界与分支互动叙事：维护世界契约、玩家人设、时间语义，跟踪物品/证据/关系等状态，把玩家动作变成世界变化并渲染成场景文字。
+【适用场景】开放世界跑团、自由行动互动、角色自主行动、世界状态维护、互动配图。
+【触发词】开放世界 / 分支互动 / 自由行动 / 世界契约
+【上下文优先级】世界契约、玩家人设、当前场景与关系/物品/证据状态必须完整带入；较早的互动事件可压缩，仅在相关时召回。`,
+    "能力-互动影游创作": `【能力说明】互动影游/分支剧的创作能力：搭建剧情图谱（节点、选项、变量、多结局），写分场剧本与分镜，规划节点配图。
+【适用场景】互动影游项目、分支剧情、视觉小说式剧本、变量与旗标、多结局设计、分镜与美术资产规划。
+【触发词】互动影游 / 分支剧情 / 多结局 / 剧情图谱 / 分镜
+【上下文优先级】剧情图谱拓扑、当前节点、角色声线属于必须完整保留的信息；此前分支的剧情节拍可压缩召回，避免整本剧本灌进每次节点编辑。`,
+    "长篇-写手": `你是长篇小说的章节写手。请依据本章的既定意图和为你挑选好的上下文材料写出正文。
+标注为"受保护"的材料（作者意图、硬事实、活跃伏笔、本章章纲）是硬约束，必须遵守；"可压缩"的材料是辅助记忆。
+不要用题材套路的默认走向去覆盖作者意图、已确立事实或伏笔安排。`,
+    "长篇-修订": `你是长篇小说的修订编辑。请按审计给出的问题清单修复本章，同时保住已确立的事实与本章目标。
+如果某个修复必须改动更上层的设定或状态，请明确指出这个需求，而不是悄悄改写既定设定。`,
+    "长篇-审计": `你是长篇小说的连贯性与质量审计员。请核查本章是否遵守受保护的意图、硬事实、活跃伏笔、篇幅比例与写作要求。
+发现未解决的问题就直说，不要把没修好的章节标成已通过。`,
+    "互动-开局引导": `你是开放世界的开局引导者。开始前需与用户确认：可玩的故事前提、世界契约、玩家人设、时间规则与视觉约定。
+除非用户主动要求，不要强加 RPG 等级、数值面板之类的固定框架。`,
+    "互动-世界演算": `你是开放世界的状态演算引擎。把玩家的动作转化为世界状态变更：场景、实体、关系、证据、物品、时间与后果。
+必须遵守世界契约，玩家实体的标识保持不变。`,
+    "互动-场景渲染": `你是开放世界的场景渲染者。把已生效的世界变更写成生动的互动叙事文字。
+不要凭空引入状态里不存在的具体物件、证据或人物，除非回填机制能把它们记录下来。`,
+    "互动-状态回填": `你负责把渲染后的场景文字核对回世界状态。从叙述中提取新出现的具体实体、证据、关系与地点并入库，防止叙事与状态漂移。`,
+    "互动-配图提示": `请根据当前场景与既定的视觉约定生成配图提示词。
+遵循用户确认过的视觉语义；除非明确要求，不要添加水印、界面框、文字覆盖或稀有度边框之类的默认元素。`,
+    "影游-剧本": `你是互动影游的剧本作者。把确认过的题材前提转化为可游玩的分场剧本：场景、对白、选项、变量与结局。
+给用户留出创作空间：格式约束不明确时先询问或沿用现状，不要自造生产规则。`,
+    "影游-分镜": `你是互动影游的分镜设计师。把剧本节拍拆成镜头级的画面方案：动作、构图、配图提示词都要清楚。
+默认产出静帧/分镜素材，除非用户要求视频。`,
+    "影游-剧情图谱": `你是互动影游的剧情图谱设计师。搭建可游玩的图结构：节点、选项、变量/旗标与多结局。
+每条分支都必须可达，每条路径都要通向一个结局。`,
+    "影游-配图规划": `请为互动影游的节点与素材制定配图方案。
+可用场景键/地点保持画面连续性，但不要求全屏游戏 UI，也不做视频转换。`,
+  },
+};
+// 确保内置技能文件存在（缺失即恢复默认）
+async function seedSkills() {
+  for (const g of ["pipeline", "engine"]) {
+    const dir = join(SKILLS_DIR, g);
+    await mkdir(dir, { recursive: true }).catch(() => {});
+    for (const [name, content] of Object.entries(DEFAULT_SKILLS[g])) {
+      const p = skillFilePath(g, name);
+      if (!existsSync(p)) await writeFile(p, content, "utf8").catch(() => {});
+    }
+  }
+  await mkdir(join(SKILLS_DIR, "custom"), { recursive: true }).catch(() => {});
+}
+// 读取一条流程技能 prompt 并做 {{变量}} 替换；文件缺失/为空则用默认并补种
+function skillPrompt(name, vars = {}) {
+  const fallback = DEFAULT_SKILLS.pipeline[name] || "";
+  let text = fallback;
+  try {
+    const p = skillFilePath("pipeline", name);
+    if (existsSync(p)) { const t = readFileSync(p, "utf8"); if (t.trim()) text = t; }
+  } catch { /* 用默认 */ }
+  return text.replace(/\{\{(\w+)\}\}/g, (_, k) => String(vars[k] ?? ""));
+}
 
 // 引擎阶段（agent）名 → 中文友好名（用于进度反馈）
 function friendlyAgent(agent) {
@@ -269,13 +381,7 @@ function panelToText(p) {
 }
 // 用 LLM 从本章正文 + 当前面板，产出更新后的面板 JSON
 function buildPanelUpdatePrompt(panel, chapterContent) {
-  const sys = `你负责维护一部游戏/系统流小说主角的数值面板。请阅读本章正文，把其中真实发生的养成变化同步到面板上——包括升级、属性提升、拿到或替换装备、学会或强化技能、确定角色昵称等。
-
-请遵守以下约束：
-- 只根据正文里明确写出来的事件改动数值；正文没写到的条目一律维持原样。
-- 数值原则上只升不降，受伤、扣血、消耗这类正文明写的减少除外；等级与属性的增长幅度要和正文描述吻合。
-- 装备或技能有增删变动时，同步更新对应数组，名称尽量简短。
-- 最终必须只返回一个 JSON 对象，字段结构与传入面板保持一致：传入有哪些属性键就保留哪些键，不要擅自增删属性项；"生命""法力"这类"当前/上限"沿用 "85/120" 的字符串写法。equipment、skills 均为 [{name, effect}] 数组。不要附带任何解释文字，也不要用 markdown 代码块包裹。`;
+  const sys = skillPrompt("人物面板更新");
   const user = `【当前人物面板 JSON】\n${JSON.stringify(panel, null, 2)}\n\n【本章正文】\n${(chapterContent || "").slice(0, 8000)}\n\n请直接输出更新后的人物面板 JSON（只要 JSON 本身）。`;
   return [{ role: "system", content: sys }, { role: "user", content: user }];
 }
@@ -360,11 +466,7 @@ async function saveChapterOutlines(bookId, outlines) {
 // 用 planner 阶段配置的模型，基于 foundation 生成 startN..startN+count-1 章的章纲
 function buildOutlinePrompt(foundation, book, startN, count, feedback, prev, recentText) {
   const rolesTxt = (foundation.roles || []).map((r) => `【${r.tier}】${r.name}`).join("、");
-  const sys = `你是这部长篇小说的章节策划。请依据故事框架、分卷卷纲和角色设定，为接下来的章节排出一段连贯、节奏有起伏、能推进当前卷目标的章纲。具体要求：
-- 紧扣卷纲的推进节点和角色当前状态，这 ${count} 章里要有清晰的悬念钩子、逐步升级的冲突，并至少安排一个高潮爆点。
-- 每章的一句话总结要落到实处，写明"这一章到底发生了什么关键事件"，避免空泛。
-- 梗概写 3-5 句，交代场景、冲突、转折以及章末留给读者的钩子。
-- 只产出章纲，不要动笔写正文。`;
+  const sys = skillPrompt("章纲生成", { count });
   const fmt = `严格按以下格式输出，不要有多余文字：
 === 第N章 ===
 标题：<不超过12字>
@@ -424,36 +526,13 @@ async function generateOutlines(bookId, startN, count, feedback, onDelta) {
 }
 // ===== 大纲（章纲）结构审计 + 修订（你提供的 prompt，输出对齐生成格式）=====
 function buildOutlineAuditPrompt(foundation, book, startN, endN, prevOutlines, groupOutlines, recentText) {
-  const sys = `你是一名小说大纲的结构审校编辑。你要审的不是文笔，也不需要润色或重写，而是判断"连续 ${endN - startN + 1} 章的章纲"在结构上是否站得住：是否服务总纲、是否契合当前分卷目标、是否接得上上文、是否符合普通读者的阅读心理。
-
-先建立判断基准：总纲是整本书的顶层设计，决定主线、核心矛盾、长期目标与人物成长弧；分卷卷纲是阶段性目标，规定本卷要完成什么、推进到哪一步、如何过渡到下一卷；章纲则是把分卷目标拆成可执行的每章步骤，既要服务当前卷目标，又不能跑偏总纲方向。审的时候别只看"有没有剧情"，而要看每章是不是在对的位置做了对的事。
-
-请重点核查：1）是否服务总纲主线、核心矛盾与主角长期目标；2）是否吻合当前分卷目标；3）该章在本卷进程中的位置是否恰当；4）是否自然承接前文事件、人物状态、情绪与遗留问题，并顺势带出后文；5）是否尊重读者心理，别为了赶进度而跳过必要的反应、铺垫、准备、失败、代价与动机铺陈；6）内部因果是否层层递进，每章是否都有明确的结构功能；7）是否为后续埋好条件，有没有提前透支高潮或缺少铺垫的问题。
-
-输出请严格采用以下分节：
-【总体判断】合格 / 需要小修 / 需要大修 / 结构严重偏离。简述这几章的结构作用、是否契合总纲与分卷目标、以及最大的风险点。
-【位置审查】该章处在本卷哪个阶段；这个阶段本应完成什么；实际完成了什么；两者是否匹配。
-【承接与递进】前文承接、内部递进、后文衔接是否都成立。
-【读者心智问题】读者可能感到突兀、跳步、看不懂或不买账的地方。
-【审计意见】分"严重 / 警告 / 一般"三档给出（档位只能用这三个词）。每条写清：档位、问题、涉及章节、影响、建议。没有问题就写"未发现"，警告类最多 10 条。
-【结构调整建议】只给大纲层面的调整（前移 / 后移 / 补过渡 / 压缩 / 扩展 / 补动机 / 补铺垫），不要动正文。
-【需要作者确认】因资料不足而无法判断的地方。
-再次强调：只审结构不审文笔；不重写正文；不新增设定；资料不足就直说"资料不足，无法判断"。`;
+  const sys = skillPrompt("章纲结构审计", { count: endN - startN + 1, startN, endN });
   const olText = groupOutlines.map((o) => `第${o.n}章 ${o.title}\n一句话：${o.summary}\n梗概：${o.detail}`).join("\n\n");
   const user = `【小说总纲】\n${foundation.story_frame || "(空)"}\n\n【当前分卷大纲】\n${foundation.volume_map || "(空)"}\n\n【当前审查范围】第 ${startN}-${endN} 章（全书目标 ${book.targetChapters} 章）\n\n【前文上下文】\n${prevOutlines || "(无)"}\n${recentText ? `\n【前文章节正文】\n${recentText}` : ""}\n\n【当前${endN - startN + 1}章小纲】\n${olText}\n\n请审查并按格式输出。`;
   return [{ role: "system", content: sys }, { role: "user", content: user }];
 }
 function buildOutlineRevisePrompt(foundation, book, startN, endN, groupOutlines, auditText, count) {
-  const sys = `你是一名小说大纲修订编辑。请依据"结构审计意见"来调整这连续 ${count} 章的章纲，让它重新契合总纲、当前分卷目标、上文承接和读者心理。你只改大纲：不写正文、不润色文笔、不随意新增人物/势力/设定，也不改动总纲、分卷目标和已经发生过的剧情。
-
-采纳原则：标为"严重"的问题必须修正；标为"警告"的问题酌情采纳，若不采纳要说明理由；标为"一般"的问题仅供参考。确实资料不足的，标注"资料不足，无法修改"。
-
-改完后必须严格按下列格式输出修订后的章纲（要交给程序解析，不要夹带其它段落）：
-=== 第N章 ===
-标题：<不超过12字>
-一句话：<本章核心事件，一句话>
-梗概：<3-5句，含场景/冲突/转折/章末钩子>
-（每章一个 === 第N章 === 块，共 ${count} 章，从第 ${startN} 章开始，章号保持不变）`;
+  const sys = skillPrompt("章纲修订", { count, startN, endN });
   const olText = groupOutlines.map((o) => `第${o.n}章 ${o.title}\n一句话：${o.summary}\n梗概：${o.detail}`).join("\n\n");
   const user = `【小说总纲】\n${foundation.story_frame || "(空)"}\n\n【当前分卷大纲】\n${foundation.volume_map || "(空)"}\n\n【当前范围】第 ${startN}-${endN} 章\n\n【原始${count}章小纲】\n${olText}\n\n【结构审计意见】\n${auditText}\n\n请按规定格式输出修订后的 ${count} 章小纲。`;
   return [{ role: "system", content: sys }, { role: "user", content: user }];
@@ -1045,35 +1124,53 @@ const server = createServer(async (req, res) => {
       return sendJson(res, 200, { ok: true, config: next });
     }
 
-    // ---- 用户技能：列出 ----
+    // ---- 技能：按组列出（含内置补种）----
     if (req.method === "GET" && path === "/api/skills") {
-      let files = [];
-      try { files = (await readdir(SKILLS_DIR)).filter((f) => f.endsWith(".md")).sort(); } catch { /* 目录不存在 */ }
-      return sendJson(res, 200, { skills: files.map((f) => f.replace(/\.md$/, "")) });
+      await seedSkills();
+      const groups = [];
+      for (const g of SKILL_GROUPS) {
+        let files = [];
+        try { files = (await readdir(join(SKILLS_DIR, g.id))).filter((f) => f.endsWith(".md")).sort(); } catch { /* */ }
+        groups.push({ id: g.id, label: g.label, skills: files.map((f) => f.replace(/\.md$/, "")) });
+      }
+      return sendJson(res, 200, { groups });
     }
-    // ---- 用户技能：读单个 ----
+    // ---- 技能：读单个 ----
     if (req.method === "GET" && path === "/api/skill") {
+      const group = SKILL_GROUPS.some((g) => g.id === url.searchParams.get("group")) ? url.searchParams.get("group") : "custom";
       const name = safeSkillName(url.searchParams.get("name"));
       if (!name) return sendJson(res, 400, { error: "缺少名称" });
       let content = "";
-      try { content = await readFile(join(SKILLS_DIR, `${name}.md`), "utf8"); } catch { /* 新建 */ }
-      return sendJson(res, 200, { name, content });
+      try { content = await readFile(skillFilePath(group, name), "utf8"); } catch { /* 新建 */ }
+      const isBuiltin = !!DEFAULT_SKILLS[group]?.[name];
+      return sendJson(res, 200, { group, name, content, builtin: isBuiltin, hasDefault: isBuiltin });
     }
-    // ---- 用户技能：保存 ----
+    // ---- 技能：保存 ----
     if (req.method === "POST" && path === "/api/skill/save") {
-      const { name, content } = await body(req);
+      const { group: rawGroup, name, content } = await body(req);
+      const group = SKILL_GROUPS.some((g) => g.id === rawGroup) ? rawGroup : "custom";
       const n = safeSkillName(name);
       if (!n) return sendJson(res, 400, { error: "名称非法" });
-      await mkdir(SKILLS_DIR, { recursive: true }).catch(() => {});
-      await writeFile(join(SKILLS_DIR, `${n}.md`), content ?? "", "utf8");
-      return sendJson(res, 200, { ok: true, name: n });
+      await mkdir(join(SKILLS_DIR, group), { recursive: true }).catch(() => {});
+      await writeFile(skillFilePath(group, n), content ?? "", "utf8");
+      return sendJson(res, 200, { ok: true, group, name: n });
     }
-    // ---- 用户技能：删除 ----
+    // ---- 技能：恢复默认（仅内置技能）----
+    if (req.method === "POST" && path === "/api/skill/reset") {
+      const { group, name } = await body(req);
+      const dflt = DEFAULT_SKILLS[group]?.[safeSkillName(name)];
+      if (dflt == null) return sendJson(res, 400, { error: "该技能没有内置默认" });
+      await mkdir(join(SKILLS_DIR, group), { recursive: true }).catch(() => {});
+      await writeFile(skillFilePath(group, name), dflt, "utf8");
+      return sendJson(res, 200, { ok: true, content: dflt });
+    }
+    // ---- 技能：删除（内置技能删除后下次列出会恢复默认）----
     if (req.method === "POST" && path === "/api/skill/delete") {
-      const { name } = await body(req);
+      const { group: rawGroup, name } = await body(req);
+      const group = SKILL_GROUPS.some((g) => g.id === rawGroup) ? rawGroup : "custom";
       const n = safeSkillName(name);
       if (!n) return sendJson(res, 400, { error: "名称非法" });
-      await rm(join(SKILLS_DIR, `${n}.md`), { force: true }).catch(() => {});
+      await rm(skillFilePath(group, n), { force: true }).catch(() => {});
       return sendJson(res, 200, { ok: true });
     }
 
