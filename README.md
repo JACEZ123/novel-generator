@@ -1,14 +1,14 @@
-# 网文小说生成器
+# 网文小说生成器 · Web Novel Generator
 
-**作者：[Jace](https://github.com/JACEZ123)** · 许可 [MIT](./LICENSE)（允许下载与改编，**须署名来源 Jace**）
+**中文** | [English](./README.en.md)
 
-本地运行的 AI 长篇网文工作台：从一句话设定出发，完成 **建书 → 大纲/世界观/角色 → 章纲 + 结构审计 → 逐章正文 + 连贯性审计 → 自动连写**，并支持游戏/系统流的**人物属性面板**、断点续写与关网页后台连写。
+**作者 / Author：[Jace](https://github.com/JACEZ123)** · 许可 [MIT](./LICENSE)（允许下载与改编，**须署名来源 Jace**）
+
+本地 AI 长篇网文工作台：从一句话设定出发，完成 **建书 → 大纲/世界观/角色 → 章纲 + 结构审计 → 逐章正文 + 连贯性审计 → 自动连写**，并支持游戏/系统流的**人物属性面板**、断点续写与关网页后台连写。
 
 <p align="center">
-  <a href="https://raw.githubusercontent.com/JACEZ123/jace-novel-generator/master/docs/screenshots/01-home.png" target="_blank" rel="noopener noreferrer"><img src="docs/screenshots/01-home.png" alt="首页" width="920" /></a>
+  <img src="docs/screenshots/01-home.png" alt="网文小说生成器 · 首页" width="920" />
 </p>
-
-<p align="center"><sub>点击任意图片 → 新标签打开原图，可直接放大</sub></p>
 
 ---
 
@@ -46,86 +46,61 @@
 
 ## 功能与界面
 
-> 以下截图均嵌在本页；**点击图片会在新标签页打开原图，可用浏览器缩放查看**（不会再跳进仓库素材目录）。
-
 ### 1. 首页工作台
 
 新建长篇 / 剧本、管理作品、一键进入设置。未配置密钥时会明确提示。
 
-<p align="center">
-  <a href="https://raw.githubusercontent.com/JACEZ123/jace-novel-generator/master/docs/screenshots/01-home.png" target="_blank" rel="noopener noreferrer"><img src="docs/screenshots/01-home.png" alt="首页工作台" width="920" /></a>
-</p>
+<p align="center"><img src="docs/screenshots/01-home.png" alt="首页工作台" width="920" /></p>
 
 ### 2. Skills 技能（提示词）
 
 长篇与剧本各有一套流程技能（章纲修订、正文写手、审计等），可改可恢复默认。
 
-<p align="center">
-  <a href="https://raw.githubusercontent.com/JACEZ123/jace-novel-generator/master/docs/screenshots/02-skills.png" target="_blank" rel="noopener noreferrer"><img src="docs/screenshots/02-skills.png" alt="Skills 设置" width="920" /></a>
-</p>
+<p align="center"><img src="docs/screenshots/02-skills.png" alt="Skills 设置" width="920" /></p>
 
 ### 3. Loop 流程节点
 
 调整「建书 / 自动连写 / 人工写作」节点顺序，按你的习惯编排流水线。
 
-<p align="center">
-  <a href="https://raw.githubusercontent.com/JACEZ123/jace-novel-generator/master/docs/screenshots/03-loop.png" target="_blank" rel="noopener noreferrer"><img src="docs/screenshots/03-loop.png" alt="Loop 流程" width="920" /></a>
-</p>
+<p align="center"><img src="docs/screenshots/03-loop.png" alt="Loop 流程" width="920" /></p>
 
 ### 4. 热点指导 + AI 一键生成 / 建书进度
 
 可先拉取热点类型指导，再一键填设定；生成大纲与世界观时展示细粒度进度（百分比、本步/合计耗时、预计剩余等）。
 
-<p align="center">
-  <a href="https://raw.githubusercontent.com/JACEZ123/jace-novel-generator/master/docs/screenshots/04-foundation-progress.png" target="_blank" rel="noopener noreferrer"><img src="docs/screenshots/04-foundation-progress.png" alt="建书与进度" width="920" /></a>
-</p>
+<p align="center"><img src="docs/screenshots/04-foundation-progress.png" alt="建书与进度" width="920" /></p>
 
 ### 5. 确认设定（大纲 / 世界观 / 伏笔等）
 
 人工审阅后可按意见重生成，或确认后进入写作。
 
-<p align="center">
-  <a href="https://raw.githubusercontent.com/JACEZ123/jace-novel-generator/master/docs/screenshots/05-confirm-settings.png" target="_blank" rel="noopener noreferrer"><img src="docs/screenshots/05-confirm-settings.png" alt="确认设定" width="920" /></a>
-</p>
+<p align="center"><img src="docs/screenshots/05-confirm-settings.png" alt="确认设定" width="920" /></p>
 
 ### 6. 确认近 5 章章纲
 
 组末章纲可编辑、整体意见重生，并可进入结构审计。
 
-<p align="center">
-  <a href="https://raw.githubusercontent.com/JACEZ123/jace-novel-generator/master/docs/screenshots/06-confirm-outline.png" target="_blank" rel="noopener noreferrer"><img src="docs/screenshots/06-confirm-outline.png" alt="确认章纲" width="920" /></a>
-</p>
+<p align="center"><img src="docs/screenshots/06-confirm-outline.png" alt="确认章纲" width="920" /></p>
 
 ### 7. 章节草稿完成
 
 支持自动纠正、修订、重写，或继续进入自动审计。
 
-<p align="center">
-  <a href="https://raw.githubusercontent.com/JACEZ123/jace-novel-generator/master/docs/screenshots/07-draft-done.png" target="_blank" rel="noopener noreferrer"><img src="docs/screenshots/07-draft-done.png" alt="草稿完成" width="920" /></a>
-</p>
+<p align="center"><img src="docs/screenshots/07-draft-done.png" alt="草稿完成" width="920" /></p>
 
 ### 8. 正文连贯性审计
 
 按轮次给出评分与问题清单（设定一致性、节奏、AI 套话等），可驱动修订闭环。
 
-<p align="center">
-  <a href="https://raw.githubusercontent.com/JACEZ123/jace-novel-generator/master/docs/screenshots/08-audit.png" target="_blank" rel="noopener noreferrer"><img src="docs/screenshots/08-audit.png" alt="正文审计" width="920" /></a>
-</p>
-
-### 9. 输入记录（Prompt 留存）
-
-本机留存关键设定与发给模型的 Prompt，便于复盘与调试。
-
-<p align="center">
-  <a href="https://raw.githubusercontent.com/JACEZ123/jace-novel-generator/master/docs/screenshots/09-input-logs.png" target="_blank" rel="noopener noreferrer"><img src="docs/screenshots/09-input-logs.png" alt="输入记录" width="920" /></a>
-</p>
+<p align="center"><img src="docs/screenshots/08-audit.png" alt="正文审计" width="920" /></p>
 
 ### 其他能力
 
 - **人物属性面板**（游戏 / LitRPG 等题材）：等级、属性、装备、技能，写作时注入，章后可更新。  
 - **自动连写 + 看门狗**：任务跑在本机服务进程，关网页继续；可下载防休眠 / 启停脚本。  
 - **报错自查**：按错误码 / 关键词检索处置建议。  
-- **任意 OpenAI 兼容接口**：DeepSeek、其他国内/海外兼容端均可。
+- **任意 OpenAI 兼容接口**：DeepSeek、其他国内/海外兼容端均可。  
+- **输入记录**：本机留存关键设定与发给模型的 Prompt，便于复盘。
 
 ---
 
@@ -213,5 +188,5 @@ docs/screenshots/       README 界面截图
 
 ## 作者
 
-**Jace** · 网文小说生成器  
+**Jace** · 网文小说生成器 / Web Novel Generator  
 GitHub：[@JACEZ123](https://github.com/JACEZ123)

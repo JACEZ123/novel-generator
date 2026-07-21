@@ -1,7 +1,7 @@
 {
   "name": "jace-novel-generator",
   "version": "0.2.0",
-  "description": "网文小说生成器（作者 Jace）—— AI 自动写长篇：建书→大纲/世界观→章纲+结构审计→逐章正文+连贯性审计→自动连写，支持人物属性面板与断点续写。自研引擎，MIT。",
+  "description": "网文小说生成器 / Web Novel Generator (by Jace) — AI long-form pipeline: foundation → outlines → dual audits → auto-continue. MIT with attribution.",
   "author": "Jace",
   "license": "MIT",
   "type": "module",
