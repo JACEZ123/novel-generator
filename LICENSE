@@ -19,16 +19,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
----
-
-NOTICE — third-party runtime dependency
-
-This project (the code in THIS repository) is licensed under MIT. It depends at
-runtime on the writing engine "@actalk/inkos-core", which is a SEPARATE project
-licensed under AGPL-3.0-only (https://github.com/Narcooo/inkos). That engine is
-NOT included in this repository; it is fetched by `npm install`.
-
-If you deploy this project as a network service, your use of @actalk/inkos-core
-is governed by AGPL-3.0. The MIT license here applies only to the code in this
-repository, not to that dependency.
