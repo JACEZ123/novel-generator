@@ -17,7 +17,7 @@ import { PipelineRunner, createLLMClient, StateManager, chatCompletion } from "@
 const HERE = fileURLToPath(new URL(".", import.meta.url));
 const DATA_ROOT = join(HERE, "data");             // 本工作台的项目数据根目录
 const PUBLIC = join(HERE, "public");
-const PORT = Number(process.env.JACE_PORT || 4568);
+const PORT = Number(process.env.NOVEL_PORT || 4568);
 
 // ---------- LLM 配置：用户自行配置，绝不硬编码密钥 ----------
 // 读取优先级：环境变量 > data/config.json > 内置默认（默认无密钥）。
@@ -27,28 +27,39 @@ const DEFAULT_LLM = {
   // 默认对接 DeepSeek，但 baseUrl / 模型均可改，任意 OpenAI 兼容接口都能用
   baseUrl: "https://api.deepseek.com",
   apiKey: "",
+  // 每个模型：id=模型标识，label=显示名称，type=模型类型，thinking=是否支持深度思考
   models: [
-    { id: "deepseek-v4-flash", label: "Fast（快·省）" },
-    { id: "deepseek-v4-pro", label: "Strong（强·贵）" },
+    { id: "deepseek-v4-flash", label: "DeepSeek V4 Flash", type: "text", thinking: true },
+    { id: "deepseek-v4-pro", label: "DeepSeek V4 Pro", type: "text", thinking: true },
   ],
   fastModel: "deepseek-v4-flash",
   strongModel: "deepseek-v4-pro",
   temperature: 0.7,
 };
+// 补全模型字段（老配置可能缺 type/thinking）
+function normModels(models) {
+  const arr = Array.isArray(models) && models.length ? models : DEFAULT_LLM.models;
+  return arr.filter((m) => m && m.id).map((m) => ({
+    id: String(m.id),
+    label: String(m.label || m.id),
+    type: m.type || "text",
+    thinking: m.thinking !== false,
+  }));
+}
 // 只读配置文件（不叠加环境变量）——供设置界面回显与写回
 function loadLLMConfigRaw() {
   let cfg = { ...DEFAULT_LLM };
   try { if (existsSync(CONFIG_PATH)) cfg = { ...cfg, ...JSON.parse(readFileSync(CONFIG_PATH, "utf8")) }; } catch { /* ignore */ }
-  if (!Array.isArray(cfg.models) || !cfg.models.length) cfg.models = DEFAULT_LLM.models;
+  cfg.models = normModels(cfg.models);
   return cfg;
 }
 // 实际生效配置（叠加环境变量覆盖，便于容器 / CI 部署且不落盘密钥）
 function loadLLMConfig() {
   const cfg = loadLLMConfigRaw();
-  cfg.apiKey = process.env.JACE_API_KEY || process.env.OPENAI_API_KEY || cfg.apiKey || "";
-  cfg.baseUrl = process.env.JACE_BASE_URL || cfg.baseUrl;
-  if (process.env.JACE_MODEL) cfg.fastModel = process.env.JACE_MODEL;
-  if (process.env.JACE_MODEL_STRONG) cfg.strongModel = process.env.JACE_MODEL_STRONG;
+  cfg.apiKey = process.env.NOVEL_API_KEY || process.env.OPENAI_API_KEY || cfg.apiKey || "";
+  cfg.baseUrl = process.env.NOVEL_BASE_URL || cfg.baseUrl;
+  if (process.env.NOVEL_MODEL) cfg.fastModel = process.env.NOVEL_MODEL;
+  if (process.env.NOVEL_MODEL_STRONG) cfg.strongModel = process.env.NOVEL_MODEL_STRONG;
   return cfg;
 }
 function hasApiKey() { return !!loadLLMConfig().apiKey; }
@@ -56,7 +67,7 @@ function hasApiKey() { return !!loadLLMConfig().apiKey; }
 function makeClient() {
   const cfg = loadLLMConfig();
   if (!cfg.apiKey) {
-    throw new Error("尚未配置 API Key：请在首页「设置」中填写，或设置环境变量 JACE_API_KEY / OPENAI_API_KEY。");
+    throw new Error("尚未配置 API Key：请在首页「设置」中填写，或设置环境变量 NOVEL_API_KEY / OPENAI_API_KEY。");
   }
   return createLLMClient({
     provider: "openai",           // OpenAI 兼容协议
@@ -920,7 +931,7 @@ const server = createServer(async (req, res) => {
       const raw = loadLLMConfigRaw();       // 文件里的原始值（判断 key 来源）
       const k = eff.apiKey || "";
       const keyHint = k ? `${k.slice(0, 3)}****${k.slice(-2)}` : "";
-      const keyFromEnv = !!(process.env.JACE_API_KEY || process.env.OPENAI_API_KEY);
+      const keyFromEnv = !!(process.env.NOVEL_API_KEY || process.env.OPENAI_API_KEY);
       return sendJson(res, 200, {
         hasKey: !!k, keyHint, keyFromEnv,
         baseUrl: eff.baseUrl,
@@ -938,9 +949,7 @@ const server = createServer(async (req, res) => {
       const cur = loadLLMConfigRaw();
       const next = { ...cur };
       if (typeof b.baseUrl === "string" && b.baseUrl.trim()) next.baseUrl = b.baseUrl.trim();
-      if (Array.isArray(b.models) && b.models.length) {
-        next.models = b.models.filter((m) => m && m.id).map((m) => ({ id: String(m.id), label: String(m.label || m.id) }));
-      }
+      if (Array.isArray(b.models) && b.models.length) next.models = normModels(b.models);
       if (typeof b.fastModel === "string" && b.fastModel.trim()) next.fastModel = b.fastModel.trim();
       if (typeof b.strongModel === "string" && b.strongModel.trim()) next.strongModel = b.strongModel.trim();
       if (b.temperature != null && !Number.isNaN(Number(b.temperature))) next.temperature = Number(b.temperature);

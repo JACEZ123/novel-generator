@@ -23,7 +23,7 @@ AI 自动写长篇小说的 Web 工作台。给出书名、题材和初始设定
 ## 🔑 密钥与隐私
 
 - 你的 API Key **只保存在本机** `data/config.json`（已被 `.gitignore` 忽略），不会上传、不会随仓库提交、不会返回给前端（接口只回掩码）。
-- 也可用环境变量注入：`JACE_API_KEY`（或 `OPENAI_API_KEY`）。环境变量优先级高于配置文件。
+- 也可用环境变量注入：`NOVEL_API_KEY`（或 `OPENAI_API_KEY`）。环境变量优先级高于配置文件。
 - 仓库中**没有任何硬编码密钥**。
 
 ## 🚀 快速开始
@@ -42,20 +42,20 @@ npm start
 也可以用环境变量代替设置界面：
 
 ```bash
-cp .env.example .env   # 填入 JACE_API_KEY 等
+cp .env.example .env   # 填入 NOVEL_API_KEY 等
 # 或直接：
-JACE_API_KEY=sk-xxxx npm start
+NOVEL_API_KEY=sk-xxxx npm start
 ```
 
 ## 🛠 配置
 
 | 环境变量 | 说明 | 默认 |
 |---|---|---|
-| `JACE_API_KEY` / `OPENAI_API_KEY` | 模型密钥 | 无（必填） |
-| `JACE_BASE_URL` | OpenAI 兼容接口地址 | `https://api.deepseek.com` |
-| `JACE_MODEL` | 快模型（正文/审查） | `deepseek-v4-flash` |
-| `JACE_MODEL_STRONG` | 强模型（大纲/审计/修订） | `deepseek-v4-pro` |
-| `JACE_PORT` | 服务端口 | `4568` |
+| `NOVEL_API_KEY` / `OPENAI_API_KEY` | 模型密钥 | 无（必填） |
+| `NOVEL_BASE_URL` | OpenAI 兼容接口地址 | `https://api.deepseek.com` |
+| `NOVEL_MODEL` | 快模型（正文/审查） | `deepseek-v4-flash` |
+| `NOVEL_MODEL_STRONG` | 强模型（大纲/审计/修订） | `deepseek-v4-pro` |
+| `NOVEL_PORT` | 服务端口 | `4568` |
 
 可用模型列表、快/强模型、温度也可在「🔑 设置」界面维护；各写作阶段用哪个模型可在「⚙ 模型配置」里分别指定。参考 `data/config.example.json`。
 

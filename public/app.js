@@ -114,16 +114,17 @@ async function checkReady() {
   } catch { return true; }
 }
 
-// ---------- 设置：API Key / Base URL / 可用模型 ----------
+// ---------- 设置：模型服务（密钥 / 请求地址 / 模型列表）----------
 async function openSettingsConfig() {
   try {
     const c = await (await fetch("/api/config")).json();
     $("cfg-baseurl").value = c.baseUrl || "";
-    $("cfg-fast").value = c.fastModel || "";
-    $("cfg-strong").value = c.strongModel || "";
     $("cfg-temp").value = c.temperature ?? 0.7;
-    $("cfg-models").value = (c.models || []).map((m) => (m.label && m.label !== m.id ? `${m.id}|${m.label}` : m.id)).join("\n");
     $("cfg-key").value = "";
+    $("cfg-key").type = "password";
+    S.cfgModels = (c.models || []).map((m) => ({ id: m.id, label: m.label || m.id, type: m.type || "text", thinking: m.thinking !== false }));
+    S.cfgFast = c.fastModel; S.cfgStrong = c.strongModel;
+    renderCfgModels();
     const st = $("cfg-key-state");
     if (c.keyFromEnv) st.textContent = "（当前来自环境变量，已生效）";
     else if (c.hasKey) st.textContent = `（已保存：${c.keyHint}，留空则不改）`;
@@ -132,17 +133,76 @@ async function openSettingsConfig() {
   } catch { /* ignore */ }
   openModal("m-config");
 }
+function toggleKeyEye() { const el = $("cfg-key"); el.type = el.type === "password" ? "text" : "password"; }
+
+// 渲染模型卡片列表 + 快/强模型下拉
+function renderCfgModels() {
+  const list = $("cfg-model-list");
+  const models = S.cfgModels || [];
+  if (!models.length) {
+    list.innerHTML = `<div class="mdl-empty">还没有模型，点右上「＋ 手动添加」新增一个</div>`;
+  } else {
+    list.innerHTML = models.map((m, i) => `
+      <div class="mdl-card">
+        <div class="mdl-head">
+          <span class="mdl-name">${esc(m.label)}</span>
+          <span class="mdl-act">
+            <a onclick="openModelEdit(${i})">✎ 编辑</a>
+            <a class="del" onclick="delCfgModel(${i})">🗑 删除</a>
+          </span>
+        </div>
+        <div class="mdl-id">${esc(m.id)}</div>
+        <div class="mdl-tags">
+          <span class="mdl-tag blue">${m.type === "reasoning" ? "推理模型" : "文本模型"}</span>
+          ${m.thinking ? '<span class="mdl-tag">深度思考</span>' : ""}
+        </div>
+      </div>`).join("");
+  }
+  // 快/强模型下拉
+  const opts = models.map((m) => `<option value="${esc(m.id)}">${esc(m.label)}（${esc(m.id)}）</option>`).join("");
+  const fast = $("cfg-fast"), strong = $("cfg-strong");
+  fast.innerHTML = opts; strong.innerHTML = opts;
+  if (models.some((m) => m.id === S.cfgFast)) fast.value = S.cfgFast; else if (models[0]) { fast.value = models[0].id; S.cfgFast = models[0].id; }
+  if (models.some((m) => m.id === S.cfgStrong)) strong.value = S.cfgStrong; else if (models[0]) { strong.value = models[0].id; S.cfgStrong = models[0].id; }
+}
+// 打开「编辑模型」弹窗；idx=null 表示新增
+function openModelEdit(idx) {
+  S.cfgEditIdx = idx;
+  const m = (idx == null) ? { label: "", id: "", type: "text", thinking: true } : S.cfgModels[idx];
+  $("me-title").textContent = idx == null ? "添加模型" : "编辑模型";
+  $("me-label").value = m.label || "";
+  $("me-id").value = m.id || "";
+  $("me-type").value = m.type || "text";
+  document.querySelector(`input[name="me-think"][value="${m.thinking === false ? "0" : "1"}"]`).checked = true;
+  openModal("m-model-edit");
+}
+function saveModelEdit() {
+  const id = $("me-id").value.trim();
+  if (!id) { alert("模型标识不能为空"); return; }
+  const m = {
+    id,
+    label: $("me-label").value.trim() || id,
+    type: $("me-type").value,
+    thinking: (document.querySelector('input[name="me-think"]:checked')?.value ?? "1") === "1",
+  };
+  S.cfgModels = S.cfgModels || [];
+  if (S.cfgEditIdx == null) S.cfgModels.push(m); else S.cfgModels[S.cfgEditIdx] = m;
+  closeModal("m-model-edit");
+  renderCfgModels();
+}
+function delCfgModel(i) {
+  if (!confirm(`删除模型「${S.cfgModels[i]?.label || ""}」？`)) return;
+  S.cfgModels.splice(i, 1);
+  renderCfgModels();
+}
 async function saveConfig() {
-  const models = $("cfg-models").value.split("\n").map((l) => l.trim()).filter(Boolean).map((l) => {
-    const [id, ...rest] = l.split("|");
-    return { id: id.trim(), label: (rest.join("|").trim() || id.trim()) };
-  });
+  if (!(S.cfgModels || []).length) { $("cfg-hint").textContent = "请至少添加一个模型"; return; }
   const payload = {
     apiKey: $("cfg-key").value.trim(),          // 空则后端保留原值
     baseUrl: $("cfg-baseurl").value.trim(),
-    models,
-    fastModel: $("cfg-fast").value.trim(),
-    strongModel: $("cfg-strong").value.trim(),
+    models: S.cfgModels,
+    fastModel: $("cfg-fast").value,
+    strongModel: $("cfg-strong").value,
     temperature: Number($("cfg-temp").value) || 0.7,
   };
   try {

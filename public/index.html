@@ -140,6 +140,18 @@
   .panel-card table.pl-attrs td:first-child{color:var(--muted);width:40%}
   .panel-card .pl-sub{font-size:12px;color:var(--acc-d);font-weight:700;margin:6px 0 2px}
   .panel-card .pl-list{margin:0;padding-left:1.2em;font-size:12.5px;line-height:1.7}
+  /* 模型服务：模型卡片 */
+  .mdl-card{border:1px solid var(--line);border-radius:11px;padding:12px 14px;margin:8px 0;background:var(--surface)}
+  .mdl-card .mdl-head{display:flex;align-items:center;gap:8px}
+  .mdl-card .mdl-name{font-weight:700;font-size:15px}
+  .mdl-card .mdl-act{margin-left:auto;display:flex;gap:14px;font-size:13px}
+  .mdl-card .mdl-act a{color:var(--acc);cursor:pointer}
+  .mdl-card .mdl-act a.del{color:#c0392b}
+  .mdl-card .mdl-id{font-size:12px;color:var(--muted);font-family:ui-monospace,monospace;margin-top:3px}
+  .mdl-card .mdl-tags{margin-top:8px;display:flex;gap:8px;flex-wrap:wrap}
+  .mdl-tag{font-size:11px;padding:2px 9px;border-radius:6px;background:#eef2f0;color:var(--acc-d)}
+  .mdl-tag.blue{background:#e7efff;color:#2b6cb0}
+  .mdl-empty{font-size:13px;color:var(--muted);padding:14px;text-align:center;border:1px dashed var(--line);border-radius:10px}
 </style>
 </head>
 <body>
@@ -188,7 +200,7 @@
       <h1>流程说明</h1>
       <div class="foundation">
         <section><h4>0 · 一次性配置</h4><div style="padding:12px 14px;line-height:1.9">
-          点右上角「🔑 设置」，填入你的模型 API Key（默认对接 DeepSeek，也可改 Base URL 接任意 OpenAI 兼容接口）。密钥只保存在你本机的 <code>data/config.json</code>，不会上传，也不会随仓库提交。也可用环境变量 <code>JACE_API_KEY</code> 注入。
+          点右上角「🔑 设置」，填入你的模型 API Key（默认对接 DeepSeek，也可改 Base URL 接任意 OpenAI 兼容接口）。密钥只保存在你本机的 <code>data/config.json</code>，不会上传，也不会随仓库提交。也可用环境变量 <code>NOVEL_API_KEY</code> 注入。
         </div></section>
         <section><h4>1 · 建书 + 生成设定</h4><div style="padding:12px 14px;line-height:1.9">
           填写书名、题材、目标章数与初始设定（世界观、金手指、主角、风格）。系统据此生成<b>故事框架、分卷卷纲、角色卡、伏笔与文风</b>，可逐项编辑或给意见重生成。
@@ -321,26 +333,58 @@
   <div class="toolbar"><button onclick="closeModal('m-logs')">关闭</button></div>
 </div></div>
 
-<!-- 设置弹框：API Key / Base URL / 可用模型 -->
-<div class="scrim" id="m-config"><div class="modal">
-  <h2>设置 <span class="badge">模型接入 · 密钥</span></h2>
-  <p style="color:var(--muted);font-size:13px;margin:.3em 0 0">密钥只保存在本机 <code>data/config.json</code>（已被 .gitignore 忽略），不会上传或随仓库提交。也可用环境变量 <code>JACE_API_KEY</code> / <code>OPENAI_API_KEY</code> 注入。</p>
-  <label>API Key <span id="cfg-key-state" style="color:var(--muted)"></span></label>
-  <input id="cfg-key" type="password" placeholder="留空则不修改已保存的密钥" autocomplete="off" />
-  <label>Base URL（OpenAI 兼容接口地址）</label>
+<!-- 设置弹框：模型服务（密钥 / 请求地址 / 模型列表） -->
+<div class="scrim" id="m-config"><div class="modal" style="max-width:720px">
+  <h2>设置 · 模型服务</h2>
+  <p style="color:var(--muted);font-size:13px;margin:.3em 0 2px">密钥只保存在本机 <code>data/config.json</code>（已被 .gitignore 忽略），不会上传或随仓库提交。也可用环境变量 <code>NOVEL_API_KEY</code> / <code>OPENAI_API_KEY</code> 注入。</p>
+
+  <label>API 密钥 <span style="color:#c0392b">*必填</span> <span id="cfg-key-state" style="color:var(--muted);font-weight:400"></span></label>
+  <div style="position:relative">
+    <input id="cfg-key" type="password" placeholder="留空则不修改已保存的密钥" autocomplete="off" style="padding-right:38px" />
+    <span onclick="toggleKeyEye()" title="显示/隐藏" style="position:absolute;right:10px;top:9px;cursor:pointer;color:var(--muted);user-select:none">👁</span>
+  </div>
+
+  <label>请求地址（Base URL） <span style="color:#c0392b">*必填</span></label>
   <input id="cfg-baseurl" placeholder="https://api.deepseek.com" />
-  <label>可用模型（每行一个：<code>模型id</code> 或 <code>模型id|显示名</code>）</label>
-  <textarea id="cfg-models" placeholder="deepseek-v4-flash|Fast（快·省）&#10;deepseek-v4-pro|Strong（强·贵）"></textarea>
-  <div class="row">
-    <div><label>快模型（正文/审查默认）</label><input id="cfg-fast" placeholder="deepseek-v4-flash" /></div>
-    <div><label>强模型（大纲/审计/修订默认）</label><input id="cfg-strong" placeholder="deepseek-v4-pro" /></div>
+  <div style="font-size:12px;color:var(--muted);margin-top:4px">示例：https://api.deepseek.com（任意 OpenAI 兼容接口均可）</div>
+
+  <div style="display:flex;align-items:center;margin:16px 0 6px">
+    <span style="font-size:14px;color:var(--acc-d);font-weight:700">模型设置</span>
+    <button style="margin-left:auto" onclick="openModelEdit(null)">＋ 手动添加</button>
+  </div>
+  <div id="cfg-model-list"></div>
+
+  <div class="row" style="margin-top:14px">
+    <div><label>快模型（正文/审查默认）</label><select id="cfg-fast"></select></div>
+    <div><label>强模型（大纲/审计/修订默认）</label><select id="cfg-strong"></select></div>
     <div><label>温度</label><input id="cfg-temp" type="number" step="0.1" value="0.7" /></div>
   </div>
-  <div class="toolbar">
+
+  <div class="toolbar" style="margin-top:16px">
     <button onclick="closeModal('m-config')">取消</button>
     <button class="primary" onclick="saveConfig()">保存设置</button>
   </div>
   <div class="hint" id="cfg-hint"></div>
+</div></div>
+
+<!-- 编辑模型弹框 -->
+<div class="scrim" id="m-model-edit"><div class="modal" style="max-width:520px">
+  <h2 id="me-title">编辑模型</h2>
+  <label>显示名称</label>
+  <input id="me-label" placeholder="例如：DeepSeek V4 Pro" />
+  <label>模型标识</label>
+  <input id="me-id" placeholder="例如：deepseek-v4-pro" />
+  <label>模型类型</label>
+  <select id="me-type"><option value="text">text（文本）</option><option value="reasoning">reasoning（推理）</option></select>
+  <label>深度思考</label>
+  <div style="margin-top:4px">
+    <label style="display:inline-flex;align-items:center;gap:5px;margin:0 18px 0 0;color:var(--ink);font-size:14px"><input type="radio" name="me-think" value="1" style="width:auto" checked /> 支持</label>
+    <label style="display:inline-flex;align-items:center;gap:5px;margin:0;color:var(--ink);font-size:14px"><input type="radio" name="me-think" value="0" style="width:auto" /> 不支持</label>
+  </div>
+  <div class="toolbar" style="margin-top:18px">
+    <button onclick="closeModal('m-model-edit')">取消</button>
+    <button class="primary" onclick="saveModelEdit()">确认</button>
+  </div>
 </div></div>
 
 <!-- 模型配置弹框 -->
