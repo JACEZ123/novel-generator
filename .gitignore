@@ -10,7 +10,6 @@ data/skills/
 
 # 生成的作品数据与运行时状态
 data/books/
-data/.inkos/
 
 # 日志与看门狗快照
 *.log
