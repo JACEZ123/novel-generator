@@ -299,30 +299,74 @@ async function deleteSkill() {
   newSkill(); await refreshSkillGroups();
 }
 
-// ---------- 分区：题材设置 ----------
+// ---------- 分区：题材设置（左列表 + 右编辑说明文本）----------
 async function loadGenresSection() {
   try { const d = await (await fetch("/api/genres")).json(); S.genres = d.genres || []; }
   catch { S.genres = []; }
-  $("gn-hint").textContent = ""; renderGenreRows();
+  if (!S.genres.length) S.genres = [{ id: "other", label: "通用/自定义", panel: false, guide: "" }];
+  S.genreSel = Math.min(S.genreSel ?? 0, S.genres.length - 1);
+  $("gn-hint").textContent = "";
+  renderGenreList();
+  fillGenreEditor();
 }
-function renderGenreRows() {
-  $("gn-rows").innerHTML = (S.genres || []).map((g, i) => `
-    <tr>
-      <td><input type="text" value="${esc(g.id)}" oninput="S.genres[${i}].id=this.value" /></td>
-      <td><input type="text" value="${esc(g.label)}" oninput="S.genres[${i}].label=this.value" /></td>
-      <td style="text-align:center"><input type="checkbox" ${g.panel ? "checked" : ""} onchange="S.genres[${i}].panel=this.checked" style="width:auto" /></td>
-      <td style="text-align:center"><a class="del" style="color:#c0392b;cursor:pointer" onclick="delGenre(${i})">删除</a></td>
-    </tr>`).join("");
+function renderGenreList() {
+  const el = $("gn-list");
+  if (!el) return;
+  el.innerHTML = (S.genres || []).map((g, i) => {
+    const name = g.label || g.id || "(未命名)";
+    const mark = g.panel ? " · 面板" : "";
+    return `<div class="sk-item ${i === S.genreSel ? "sel" : ""}" onclick="selectGenre(${i})">🏷 ${esc(name)}<div style="font-size:11px;color:var(--muted);margin-top:2px">${esc(g.id || "")}${mark}</div></div>`;
+  }).join("");
 }
-function addGenre() { S.genres = S.genres || []; S.genres.push({ id: "", label: "", panel: false }); renderGenreRows(); }
-function delGenre(i) { S.genres.splice(i, 1); renderGenreRows(); }
+function selectGenre(i) {
+  S.genreSel = i;
+  renderGenreList();
+  fillGenreEditor();
+}
+function fillGenreEditor() {
+  const g = (S.genres || [])[S.genreSel] || { id: "", label: "", panel: false, guide: "" };
+  $("gn-id").value = g.id || "";
+  $("gn-label").value = g.label || "";
+  $("gn-panel").checked = !!g.panel;
+  $("gn-guide").value = g.guide || "";
+}
+function syncGenreField(field) {
+  if (!S.genres?.[S.genreSel]) return;
+  if (field === "panel") S.genres[S.genreSel].panel = $("gn-panel").checked;
+  else if (field === "id") S.genres[S.genreSel].id = $("gn-id").value;
+  else if (field === "label") S.genres[S.genreSel].label = $("gn-label").value;
+  else if (field === "guide") S.genres[S.genreSel].guide = $("gn-guide").value;
+  if (field === "id" || field === "label" || field === "panel") renderGenreList();
+}
+function addGenre() {
+  S.genres = S.genres || [];
+  S.genres.push({ id: "new-genre", label: "新题材", panel: false, guide: "在这里写该题材的说明文本：核心套路、禁忌、节奏与面板要求等。" });
+  S.genreSel = S.genres.length - 1;
+  renderGenreList();
+  fillGenreEditor();
+}
+function delSelectedGenre() {
+  if (!S.genres?.length) return;
+  if (S.genres.length <= 1) { $("gn-hint").textContent = "至少保留一个题材"; return; }
+  if (!confirm("删除当前题材？")) return;
+  S.genres.splice(S.genreSel, 1);
+  S.genreSel = Math.max(0, S.genreSel - 1);
+  renderGenreList();
+  fillGenreEditor();
+}
 async function saveGenres() {
+  // 先把编辑器当前值刷回
+  syncGenreField("id"); syncGenreField("label"); syncGenreField("panel"); syncGenreField("guide");
   const genres = (S.genres || []).filter((g) => (g.id || "").trim());
   if (!genres.length) { $("gn-hint").textContent = "至少保留一个题材"; return; }
   const d = await (await fetch("/api/genres", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ genres }) })).json();
   const el = $("gn-hint");
-  if (d.ok) { el.style.color = "var(--acc-d)"; el.textContent = "✅ 已保存"; S.genres = d.genres; renderGenreRows(); }
-  else { el.style.color = "var(--warn)"; el.textContent = "保存失败：" + (d.error || ""); }
+  if (d.ok) {
+    el.style.color = "var(--acc-d)"; el.textContent = "✅ 已保存（建书时会注入题材说明）";
+    S.genres = d.genres;
+    S.genreSel = Math.min(S.genreSel ?? 0, S.genres.length - 1);
+    renderGenreList(); fillGenreEditor();
+  } else { el.style.color = "var(--warn)"; el.textContent = "保存失败：" + (d.error || ""); }
 }
 
 // ---------- 分区：自动写作配置 ----------
@@ -596,9 +640,6 @@ async function openSettings(kind) {
   $("settings-title").textContent = (kind === "longform" ? "长篇小说" : "剧本创作") + " · 初始设定";
   const genBtn = $("btn-gen");
   if (genBtn) genBtn.textContent = kind === "script" ? "生成剧本结构与人物" : "生成大纲与世界观";
-  const tLab = document.querySelector('label[for="f-target"]') || $("f-target")?.previousElementSibling;
-  const wLab = document.querySelector('label[for="f-words"]') || $("f-words")?.previousElementSibling;
-  // 标签在父级 div 内
   const tWrap = $("f-target")?.parentElement?.querySelector("label");
   const wWrap = $("f-words")?.parentElement?.querySelector("label");
   if (tWrap) tWrap.textContent = kind === "script" ? "目标场数" : "目标章数";

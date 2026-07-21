@@ -118,35 +118,57 @@ function loadModelConfig() {
   return base;
 }
 
-// ---------- 题材设置：题材列表 + 是否启用人物面板 ----------
+// ---------- 题材设置：标识 / 显示名 / 题材说明文本 / 是否启用人物面板 ----------
 const GENRES_PATH = join(DATA_ROOT, "genres.json");
 const DEFAULT_GENRES = [
-  { id: "other", label: "通用/自定义", panel: false },
-  { id: "xianxia", label: "仙侠", panel: true },
-  { id: "xuanhuan", label: "玄幻", panel: true },
-  { id: "urban", label: "都市", panel: false },
-  { id: "litrpg", label: "游戏/LitRPG", panel: true },
-  { id: "progression", label: "升级流", panel: true },
-  { id: "cultivation", label: "修真", panel: true },
-  { id: "sci-fi", label: "科幻", panel: false },
-  { id: "horror", label: "恐怖", panel: false },
-  { id: "isekai", label: "异世界", panel: true },
-  { id: "romantasy", label: "浪漫奇幻", panel: false },
-  { id: "system-apocalypse", label: "系统末世", panel: true },
-  { id: "tower-climber", label: "爬塔", panel: true },
-  { id: "dungeon-core", label: "地下城核心", panel: true },
-  { id: "cozy", label: "治愈日常", panel: false },
+  { id: "other", label: "通用/自定义", panel: false, guide: "不预设流派套路。按作者初始设定自由发挥，保持内在逻辑自洽即可。" },
+  { id: "xianxia", label: "仙侠", panel: true, guide: "仙侠：修炼境界、宗门势力、法宝灵丹、因果劫难是核心。战力与境界要有清晰阶梯，避免无代价飞升。文风可偏古风半文白，但对话要可读。" },
+  { id: "xuanhuan", label: "玄幻", panel: true, guide: "玄幻：异能体系、血脉天赋、秘境争夺、势力制衡。升级爽点要铺垫代价与信息差，地图与势力要逐步打开，忌开局无敌。" },
+  { id: "urban", label: "都市", panel: false, guide: "都市：现实社会规则优先。金手指若存在，也要受法律、舆论、资源与人际关系约束。冲突来自利益、身份与情感，少无脑打脸堆砌。" },
+  { id: "litrpg", label: "游戏/LitRPG", panel: true, guide: "游戏/LitRPG：等级、属性、技能、装备、任务、副本规则要前后一致。面板数值变化必须能在正文找到依据；定期让读者看到养成进度。" },
+  { id: "progression", label: "升级流", panel: true, guide: "升级流：每段剧情要有可感知的变强节点（突破、技能、装备、认知）。爽点来自筹备→试炼→兑现，避免无铺垫的突然翻盘。" },
+  { id: "cultivation", label: "修真", panel: true, guide: "修真：炼气筑基金丹等境界清晰；心魔、天劫、丹毒、资源争夺是常见压力。强调修炼过程与取舍，不只报境界名。" },
+  { id: "sci-fi", label: "科幻", panel: false, guide: "科幻：技术设定要自洽（能源、通信、武器、社会后果）。硬科幻偏机制，软科幻偏人文；不要用魔法语汇硬套科技。" },
+  { id: "horror", label: "恐怖", panel: false, guide: "恐怖：信息差与未知压力优先于血腥堆砌。规则怪谈要写清「可观察的规则」与违反代价；节奏张弛有度，留白比直说更有效。" },
+  { id: "isekai", label: "异世界", panel: true, guide: "异世界：穿越/转生后的适应期要有；原世界认知与新世界规则碰撞出戏剧性。金手指需有限制，避免开局通关。" },
+  { id: "romantasy", label: "浪漫奇幻", panel: false, guide: "浪漫奇幻：感情线与奇幻冲突并重。关系推进要有阻碍与选择，奇幻设定服务人物关系，忌只谈恋爱不推进主线。" },
+  { id: "system-apocalypse", label: "系统末世", panel: true, guide: "系统末世：生存资源、秩序崩坏、系统任务/惩罚并行。系统规则要稳定；人性与物资冲突比单纯刷怪更重要。" },
+  { id: "tower-climber", label: "爬塔", panel: true, guide: "爬塔：层机制、试炼规则、队伍配置、层间休息与情报。每层应有独特机制，通关要付出代价，忌每层同质化。" },
+  { id: "dungeon-core", label: "地下城核心", panel: true, guide: "地下城核心：以核心视角经营地城（房间、陷阱、怪物、入侵者）。成长来自结构扩建与战术迭代，需平衡防守与资源。" },
+  { id: "cozy", label: "治愈日常", panel: false, guide: "治愈日常：低压力、生活质感、关系温暖。冲突宜小而具体（误会、季节、小目标），避免强行大灾变破坏基调。" },
+  { id: "script-drama", label: "现实剧/正剧", panel: false, guide: "剧本·正剧：人物动机与社会关系驱动冲突。对白要推进行动，少空喊口号；场次目标清晰，每场结束时局面应有变化。" },
+  { id: "script-suspense", label: "悬疑剧", panel: false, guide: "剧本·悬疑：线索投放、误导与回收要可回溯。对白可藏信息，但关键证据最终要落在可拍的场面上。" },
 ];
+function normalizeGenre(g) {
+  if (!g || !g.id) return null;
+  return {
+    id: String(g.id).trim(),
+    label: String(g.label || g.id).trim(),
+    panel: !!g.panel,
+    guide: String(g.guide ?? g.text ?? "").trim(),
+  };
+}
 function loadGenres() {
+  const defaultsById = Object.fromEntries(DEFAULT_GENRES.map((g) => [g.id, g]));
   try {
     if (existsSync(GENRES_PATH)) {
       const a = JSON.parse(readFileSync(GENRES_PATH, "utf8"));
-      if (Array.isArray(a) && a.length) return a.filter((g) => g && g.id).map((g) => ({ id: String(g.id), label: String(g.label || g.id), panel: !!g.panel }));
+      if (Array.isArray(a) && a.length) {
+        return a.map(normalizeGenre).filter(Boolean).map((g) => ({
+          ...g,
+          // 旧配置没有 guide 时，用内置默认补上（用户仍可改）
+          guide: g.guide || defaultsById[g.id]?.guide || "",
+        }));
+      }
     }
   } catch { /* ignore */ }
-  return DEFAULT_GENRES;
+  return DEFAULT_GENRES.map((g) => ({ ...g }));
 }
 function panelGenreSet() { return new Set(loadGenres().filter((g) => g.panel).map((g) => g.id)); }
+function genreGuide(genreId) {
+  const g = loadGenres().find((x) => x.id === genreId);
+  return g?.guide || "";
+}
 
 // ---------- 自动写作配置：全局默认与运行时轮数 ----------
 const WRITING_CFG_PATH = join(DATA_ROOT, "writing-config.json");
@@ -645,7 +667,12 @@ const server = createServer(async (req, res) => {
         };
         const onStage = (s) => { if (!aborted && s?.msg) sseSend(res, "stage", { msg: friendlyStage(s.msg) }); };
         sseSend(res, "stage", { msg: "📖 正在初始化书籍与创作骨架…" });
-        const runner = makeRunner({ externalContext: settings, onRequest, onStage });
+        const gGuide = genreGuide(genre);
+        const external = [
+          settings,
+          gGuide ? `【题材说明·${genre}】\n${gGuide}` : "",
+        ].filter(Boolean).join("\n\n");
+        const runner = makeRunner({ externalContext: external, onRequest, onStage });
         await runner.initBook(bookConfig);
         if (aborted) return;
         const foundation = await readFoundation(bookId);
@@ -1014,7 +1041,8 @@ const server = createServer(async (req, res) => {
     if (req.method === "POST" && path === "/api/genres") {
       const { genres } = await body(req);
       if (!Array.isArray(genres) || !genres.length) return sendJson(res, 400, { error: "题材列表不能为空" });
-      const clean = genres.filter((g) => g && g.id).map((g) => ({ id: String(g.id).trim(), label: String(g.label || g.id).trim(), panel: !!g.panel }));
+      const clean = genres.map(normalizeGenre).filter(Boolean);
+      if (!clean.length) return sendJson(res, 400, { error: "题材列表不能为空" });
       await mkdir(DATA_ROOT, { recursive: true }).catch(() => {});
       await writeFile(GENRES_PATH, JSON.stringify(clean, null, 2), "utf8");
       return sendJson(res, 200, { ok: true, genres: clean });

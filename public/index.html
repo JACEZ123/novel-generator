@@ -441,14 +441,31 @@
       <!-- 题材设置 -->
       <div id="hub-genres" class="hub-sec hidden">
         <h3 class="sec-t">题材设置</h3>
-        <p class="sec-d">管理建书时可选的题材，以及每个题材是否默认启用「人物属性面板」（游戏/系统流等养成向题材建议开启）。</p>
-        <table class="gn-tbl"><thead><tr><th style="width:34%">题材标识</th><th>显示名称</th><th style="width:90px">人物面板</th><th style="width:56px"></th></tr></thead>
-          <tbody id="gn-rows"></tbody>
-        </table>
-        <div class="toolbar" style="margin-top:12px">
-          <button onclick="addGenre()">＋ 添加题材</button>
-          <button class="primary" onclick="saveGenres()">保存题材</button>
-          <span class="hint" id="gn-hint" style="margin:0"></span>
+        <p class="sec-d">每个题材除了标识与显示名，还应有一段<strong>题材说明文本</strong>（流派套路、禁忌、面板建议等）。建书时会把当前题材的说明注入生成上下文。右侧可直接编辑说明。</p>
+        <div class="sk-grid">
+          <div>
+            <div id="gn-list" class="sk-list"></div>
+            <div class="toolbar" style="margin-top:8px">
+              <button onclick="addGenre()">＋ 添加题材</button>
+              <button class="primary" onclick="saveGenres()">保存全部</button>
+            </div>
+            <span class="hint" id="gn-hint" style="margin:0;display:block;margin-top:6px"></span>
+          </div>
+          <div>
+            <div class="row" style="margin-bottom:8px">
+              <div><label>题材标识</label><input id="gn-id" placeholder="如 xianxia" oninput="syncGenreField('id')" /></div>
+              <div><label>显示名称</label><input id="gn-label" placeholder="如 仙侠" oninput="syncGenreField('label')" /></div>
+            </div>
+            <label style="display:flex;align-items:center;gap:8px;margin:6px 0 10px">
+              <input type="checkbox" id="gn-panel" style="width:auto" onchange="syncGenreField('panel')" /> 启用人物属性面板
+            </label>
+            <label>题材说明文本（建书时注入）</label>
+            <textarea id="gn-guide" rows="14" placeholder="写清该题材的核心套路、禁忌、节奏与数值/面板要求…" oninput="syncGenreField('guide')" style="min-height:260px"></textarea>
+            <div class="toolbar" style="margin-top:8px">
+              <button onclick="delSelectedGenre()" style="color:#c0392b">删除当前题材</button>
+              <button class="primary" onclick="saveGenres()">保存</button>
+            </div>
+          </div>
         </div>
       </div>
 
