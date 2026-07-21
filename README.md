@@ -4,7 +4,11 @@
 
 本地运行的 AI 长篇网文工作台：从一句话设定出发，完成 **建书 → 大纲/世界观/角色 → 章纲 + 结构审计 → 逐章正文 + 连贯性审计 → 自动连写**，并支持游戏/系统流的**人物属性面板**、断点续写与关网页后台连写。
 
-![首页](docs/screenshots/01-home.png)
+<p align="center">
+  <a href="docs/screenshots/01-home.png"><img src="docs/screenshots/01-home.png" alt="首页" width="920" /></a>
+</p>
+
+<p align="center"><sub>点击任意图片可放大查看原图</sub></p>
 
 ---
 
@@ -42,59 +46,79 @@
 
 ## 功能与界面
 
+> 以下截图均嵌在本页；**直接点击图片即可放大**（无需再进 `docs/screenshots` 目录）。
+
 ### 1. 首页工作台
 
 新建长篇 / 剧本、管理作品、一键进入设置。未配置密钥时会明确提示。
 
-![首页工作台](docs/screenshots/01-home.png)
+<p align="center">
+  <a href="docs/screenshots/01-home.png"><img src="docs/screenshots/01-home.png" alt="首页工作台" width="920" /></a>
+</p>
 
 ### 2. Skills 技能（提示词）
 
 长篇与剧本各有一套流程技能（章纲修订、正文写手、审计等），可改可恢复默认。
 
-![Skills 设置](docs/screenshots/02-skills.png)
+<p align="center">
+  <a href="docs/screenshots/02-skills.png"><img src="docs/screenshots/02-skills.png" alt="Skills 设置" width="920" /></a>
+</p>
 
 ### 3. Loop 流程节点
 
 调整「建书 / 自动连写 / 人工写作」节点顺序，按你的习惯编排流水线。
 
-![Loop 流程](docs/screenshots/03-loop.png)
+<p align="center">
+  <a href="docs/screenshots/03-loop.png"><img src="docs/screenshots/03-loop.png" alt="Loop 流程" width="920" /></a>
+</p>
 
 ### 4. 热点指导 + AI 一键生成 / 建书进度
 
 可先拉取热点类型指导，再一键填设定；生成大纲与世界观时展示细粒度进度（百分比、本步/合计耗时、预计剩余等）。
 
-![建书与进度](docs/screenshots/04-foundation-progress.png)
+<p align="center">
+  <a href="docs/screenshots/04-foundation-progress.png"><img src="docs/screenshots/04-foundation-progress.png" alt="建书与进度" width="920" /></a>
+</p>
 
 ### 5. 确认设定（大纲 / 世界观 / 伏笔等）
 
 人工审阅后可按意见重生成，或确认后进入写作。
 
-![确认设定](docs/screenshots/05-confirm-settings.png)
+<p align="center">
+  <a href="docs/screenshots/05-confirm-settings.png"><img src="docs/screenshots/05-confirm-settings.png" alt="确认设定" width="920" /></a>
+</p>
 
 ### 6. 确认近 5 章章纲
 
 组末章纲可编辑、整体意见重生，并可进入结构审计。
 
-![确认章纲](docs/screenshots/06-confirm-outline.png)
+<p align="center">
+  <a href="docs/screenshots/06-confirm-outline.png"><img src="docs/screenshots/06-confirm-outline.png" alt="确认章纲" width="920" /></a>
+</p>
 
 ### 7. 章节草稿完成
 
 支持自动纠正、修订、重写，或继续进入自动审计。
 
-![草稿完成](docs/screenshots/07-draft-done.png)
+<p align="center">
+  <a href="docs/screenshots/07-draft-done.png"><img src="docs/screenshots/07-draft-done.png" alt="草稿完成" width="920" /></a>
+</p>
 
 ### 8. 正文连贯性审计
 
 按轮次给出评分与问题清单（设定一致性、节奏、AI 套话等），可驱动修订闭环。
 
-![正文审计](docs/screenshots/08-audit.png)
+<p align="center">
+  <a href="docs/screenshots/08-audit.png"><img src="docs/screenshots/08-audit.png" alt="正文审计" width="920" /></a>
+</p>
 
 ### 9. 输入记录（Prompt 留存）
 
 本机留存关键设定与发给模型的 Prompt，便于复盘与调试。
 
-![输入记录](docs/screenshots/09-input-logs.png)
+<p align="center">
+  <a href="docs/screenshots/09-input-logs.png"><img src="docs/screenshots/09-input-logs.png" alt="输入记录" width="920" /></a>
+</p>
 
 ### 其他能力
 
