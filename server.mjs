@@ -8,7 +8,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join, extname } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { PipelineRunner, createLLMClient, StateManager, chatCompletion, loadSkillPrompt } from "./lib/engine.mjs";
+import { PipelineRunner, createLLMClient, StateManager, chatCompletion, loadSkillPrompt, loadCustomSkillsBundle } from "./lib/engine.mjs";
 import { DEFAULT_PIPELINE_SKILLS, SKILL_GROUP_DEFS } from "./lib/default-skills.mjs";
 
 const HERE = fileURLToPath(new URL(".", import.meta.url));
@@ -370,19 +370,29 @@ async function saveChapterOutlines(bookId, outlines) {
 // 用 planner 阶段配置的模型，基于 foundation 生成 startN..startN+count-1 章的章纲
 function buildOutlinePrompt(foundation, book, startN, count, feedback, prev, recentText) {
   const rolesTxt = (foundation.roles || []).map((r) => `【${r.tier}】${r.name}`).join("、");
-  const sys = skillPrompt("章纲生成", { count });
-  const fmt = `严格按以下格式输出，不要有多余文字：
+  const isScript = book.kind === "script";
+  const sys = skillPrompt(isScript ? "分场大纲生成" : "章纲生成", { count, startN });
+  const custom = loadCustomSkillsBundle(DATA_ROOT);
+  const fmt = isScript
+    ? `严格按以下格式输出，不要有多余文字：
+=== 第N场 ===
+标题：<不超过12字>
+一句话：<本场核心戏剧事件>
+梗概：<3-5句，含场景地点/冲突/对白重心/场末钩子>
+（每场一个 === 第N场 === 块，共 ${count} 场，从第 ${startN} 场开始）`
+    : `严格按以下格式输出，不要有多余文字：
 === 第N章 ===
 标题：<不超过12字>
 一句话：<本章核心事件，一句话>
 梗概：<3-5句，含场景/冲突/转折/章末钩子>
 （每章一个 === 第N章 === 块，共 ${count} 章，从第 ${startN} 章开始）`;
-  const user = `# 书名\n${book.title}（${book.genre}｜目标${book.targetChapters}章×每章${book.chapterWordCount}字）
+  const unit = isScript ? "场" : "章";
+  const user = `# 作品\n${book.title}（${book.genre}｜${isScript ? "剧本" : "长篇"}｜目标${book.targetChapters}${unit}）
 
-# 故事框架 / 世界观
+# 故事框架
 ${foundation.story_frame || "(空)"}
 
-# 卷纲 / OKR
+# ${isScript ? "幕场结构" : "卷纲 / OKR"}
 ${foundation.volume_map || "(空)"}
 
 # 角色
@@ -390,15 +400,17 @@ ${rolesTxt || "(空)"}
 
 # 设定规则
 ${foundation.book_rules || "(空)"}
-${prev ? `\n# 已确认的前序章纲（保持连贯，不要重复）\n${prev}` : ""}
-${recentText ? `\n# 前文章节正文（承接依据：人物状态、情绪、未解决问题都要自然接上）\n${recentText}` : ""}
+${prev ? `\n# 已确认的前序${unit}纲（保持连贯，不要重复）\n${prev}` : ""}
+${recentText ? `\n# 前文摘录\n${recentText}` : ""}
+${custom ? `\n${custom}` : ""}
 ${feedback ? `\n# 用户修改意见（务必执行）\n${feedback}` : ""}
 
-请为第 ${startN} 到第 ${startN + count - 1} 章生成章纲。\n\n${fmt}`;
+请为第 ${startN} 到第 ${startN + count - 1} ${unit}生成大纲。\n\n${fmt}`;
   return [{ role: "system", content: sys }, { role: "user", content: user }];
 }
 function parseOutlines(raw) {
-  const blocks = raw.split(/===\s*第\s*(\d+)\s*章\s*===/).slice(1);
+  // 兼容「第N章」与剧本「第N场」
+  const blocks = raw.split(/===\s*第\s*(\d+)\s*(?:章|场)\s*===/).slice(1);
   const out = [];
   for (let i = 0; i < blocks.length; i += 2) {
     const n = Number(blocks[i]);
@@ -514,7 +526,8 @@ async function runAutoLoop(bookId, job) {
           const prev = (await loadChapterOutlines(bookId)).filter((o) => o.n < targetN || o.n >= targetN + 5);
           await saveChapterOutlines(bookId, [...prev, ...outlines].sort((a, b) => a.n - b.n));
           let r2 = 0, aud;
-          while (r2 < 2 && !job.stop) { r2++; aud = await auditOutlineGroup(bookId, targetN, 5); prog(job, `🔎 章纲第 ${r2} 轮审计：${aud.passed ? "合格" : "修订中"}`); if (aud.passed) break; await reviseOutlineGroup(bookId, targetN, 5, aud.raw); }
+          const maxOl = loadWritingConfig().outlineAuditMaxRounds || 2;
+          while (r2 < maxOl && !job.stop) { r2++; aud = await auditOutlineGroup(bookId, targetN, 5); prog(job, `🔎 章纲第 ${r2} 轮审计：${aud.passed ? "合格" : "修订中"}`); if (aud.passed) break; await reviseOutlineGroup(bookId, targetN, 5, aud.raw); }
           const all2 = await loadChapterOutlines(bookId);
           all2.forEach((o) => { if (o.n >= targetN && o.n < targetN + 5) { o.audited = true; o.confirmed = true; } });
           await saveChapterOutlines(bookId, all2);
@@ -613,7 +626,7 @@ const server = createServer(async (req, res) => {
       await rm(join(DATA_ROOT, "books", bookId), { recursive: true, force: true }).catch(() => {});
       const now = new Date().toISOString();
       const bookConfig = {
-        id: bookId, title, platform: "tomato", genre,
+        id: bookId, title, platform: "tomato", genre, kind,
         status: "outlining", targetChapters, chapterWordCount, language: "zh",
         createdAt: now, updatedAt: now,
       };
@@ -1145,7 +1158,7 @@ const server = createServer(async (req, res) => {
           const total = await chapterCount(id);
           const sf = join(root, id, "story", "outline", "story_frame.md");
           const hasFoundation = existsSync(sf) && (await stat(sf)).size > 0;
-          out.push({ id, title: bj.title || id, genre: bj.genre, kind: "longform", total, hasFoundation, updatedAt: bj.updatedAt });
+          out.push({ id, title: bj.title || id, genre: bj.genre, kind: bj.kind || "longform", total, hasFoundation, updatedAt: bj.updatedAt });
         } catch { /* 跳过损坏的 */ }
       }
       out.sort((a, b) => String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")));

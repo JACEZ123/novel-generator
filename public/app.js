@@ -81,7 +81,7 @@ async function loadBooks() {
     const list = $("book-list");
     list.innerHTML = (d.books || []).map((b) => `
       <div class="book-item ${b.id === S.bookId ? "active" : ""}" onclick="resumeBook('${encodeURIComponent(b.id)}')">
-        <div class="bk-kind">📖 长篇小说</div>
+        <div class="bk-kind">${b.kind === "script" ? "🎬 剧本" : "📖 长篇小说"}</div>
         <div class="bk-title">${esc(b.title)}</div>
         <div class="bk-meta">${b.hasFoundation ? `已写 ${b.total} 章` : "设定未完成"}</div>
       </div>`).join("") || `<p style="color:var(--muted);font-size:12px;padding:4px">还没有作品，点上方新建。</p>`;
@@ -594,6 +594,15 @@ async function saveModelConfig() {
 async function openSettings(kind) {
   S.kind = kind;
   $("settings-title").textContent = (kind === "longform" ? "长篇小说" : "剧本创作") + " · 初始设定";
+  const genBtn = $("btn-gen");
+  if (genBtn) genBtn.textContent = kind === "script" ? "生成剧本结构与人物" : "生成大纲与世界观";
+  const tLab = document.querySelector('label[for="f-target"]') || $("f-target")?.previousElementSibling;
+  const wLab = document.querySelector('label[for="f-words"]') || $("f-words")?.previousElementSibling;
+  // 标签在父级 div 内
+  const tWrap = $("f-target")?.parentElement?.querySelector("label");
+  const wWrap = $("f-words")?.parentElement?.querySelector("label");
+  if (tWrap) tWrap.textContent = kind === "script" ? "目标场数" : "目标章数";
+  if (wWrap) wWrap.textContent = kind === "script" ? "每场字数" : "每章字数";
   // 题材下拉与默认章数/字数来自「题材设置」「自动写作配置」
   try {
     const [g, w] = await Promise.all([
@@ -604,8 +613,8 @@ async function openSettings(kind) {
       $("f-genre").innerHTML = g.genres.map((x) => `<option value="${esc(x.id)}">${esc(x.label)}</option>`).join("");
     }
     const c = w.config || {};
-    if (c.targetChapters) $("f-target").value = c.targetChapters;
-    if (c.chapterWordCount) $("f-words").value = c.chapterWordCount;
+    if (c.targetChapters) $("f-target").value = kind === "script" ? Math.min(c.targetChapters, 60) : c.targetChapters;
+    if (c.chapterWordCount) $("f-words").value = kind === "script" ? Math.min(c.chapterWordCount, 1500) : c.chapterWordCount;
   } catch { /* 用页面默认 */ }
   openModal("m-settings");
 }
