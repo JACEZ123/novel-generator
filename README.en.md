@@ -114,8 +114,8 @@ Round-by-round score and issues (setting consistency, pacing, AI clichés), feed
 ### Steps
 
 ```bash
-git clone https://github.com/JACEZ123/jace-novel-generator.git
-cd jace-novel-generator
+git clone https://github.com/JACEZ123/novel-generator.git
+cd novel-generator
 npm install
 
 # Optional local config files (you can also fill the key later in the UI)

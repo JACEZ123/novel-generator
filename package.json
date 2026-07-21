@@ -1,5 +1,5 @@
 {
-  "name": "jace-novel-generator",
+  "name": "novel-generator",
   "version": "0.2.0",
   "description": "网文小说生成器 / Web Novel Generator (by Jace) — AI long-form pipeline: foundation → outlines → dual audits → auto-continue. MIT with attribution.",
   "author": "Jace",

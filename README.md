@@ -109,8 +109,8 @@
 ### 安装步骤
 
 ```bash
-git clone https://github.com/JACEZ123/jace-novel-generator.git
-cd jace-novel-generator
+git clone https://github.com/JACEZ123/novel-generator.git
+cd novel-generator
 npm install
 
 # 可选：准备本机配置文件（不含密钥也可稍后在网页填写）
