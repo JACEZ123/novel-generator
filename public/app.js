@@ -114,8 +114,21 @@ async function checkReady() {
   } catch { return true; }
 }
 
-// ---------- 设置：模型服务（密钥 / 请求地址 / 模型列表）----------
-async function openSettingsConfig() {
+// ---------- 设置中心（Hub）：左菜单 + 各分区 ----------
+function openHub(sec) { hubNav(sec || "models"); openModal("m-hub"); }
+function openSettingsConfig() { openHub("models"); }   // 兼容旧入口（提示条按钮等）
+function hubNav(sec) {
+  const secs = ["models", "stages", "skills", "genres", "writing"];
+  const s = secs.includes(sec) ? sec : "models";
+  secs.forEach((x) => {
+    $("hub-" + x).classList.toggle("hidden", x !== s);
+    document.querySelector(`.hub-navi[data-sec="${x}"]`)?.classList.toggle("sel", x === s);
+  });
+  ({ models: loadModelsSection, stages: loadStagesSection, skills: loadSkillsSection, genres: loadGenresSection, writing: loadWritingSection }[s])();
+}
+
+// ---------- 分区：模型服务（密钥 / 请求地址 / 模型列表）----------
+async function loadModelsSection() {
   try {
     const c = await (await fetch("/api/config")).json();
     $("cfg-baseurl").value = c.baseUrl || "";
@@ -131,7 +144,6 @@ async function openSettingsConfig() {
     else st.textContent = "（未配置）";
     $("cfg-hint").textContent = "";
   } catch { /* ignore */ }
-  openModal("m-config");
 }
 function toggleKeyEye() { const el = $("cfg-key"); el.type = el.type === "password" ? "text" : "password"; }
 
@@ -211,11 +223,101 @@ async function saveConfig() {
       $("cfg-hint").style.color = "var(--acc-d)";
       $("cfg-hint").textContent = d.hasKey ? "✅ 已保存，密钥就绪" : "⚠ 已保存，但仍未检测到密钥";
       checkReady();
-      setTimeout(() => closeModal("m-config"), 700);
     } else {
       $("cfg-hint").textContent = "保存失败";
     }
   } catch (e) { $("cfg-hint").textContent = "保存失败：" + e; }
+}
+
+// ---------- 分区：Skills 技能管理（data/skills/*.md）----------
+async function loadSkillsSection() {
+  try { const d = await (await fetch("/api/skills")).json(); S.skills = d.skills || []; }
+  catch { S.skills = []; }
+  S.skillSel = null;
+  $("sk-name").value = ""; $("sk-content").value = ""; $("sk-hint").textContent = "";
+  renderSkillList();
+}
+function renderSkillList() {
+  const q = ($("sk-search").value || "").trim();
+  const items = (S.skills || []).filter((n) => !q || n.includes(q));
+  const list = $("sk-list");
+  if (!items.length) { list.innerHTML = `<div class="sk-empty">${(S.skills || []).length ? "无匹配" : "还没有技能，点上方「新建技能」"}</div>`; return; }
+  list.innerHTML = items.map((n) => `<div class="sk-item ${n === S.skillSel ? "sel" : ""}" onclick="selectSkill('${encodeURIComponent(n)}')">📄 ${esc(n)}</div>`).join("");
+}
+async function selectSkill(enc) {
+  const name = decodeURIComponent(enc);
+  try {
+    const d = await (await fetch(`/api/skill?name=${encodeURIComponent(name)}`)).json();
+    S.skillSel = d.name; $("sk-name").value = d.name; $("sk-content").value = d.content || "";
+    $("sk-hint").textContent = ""; renderSkillList();
+  } catch { /* ignore */ }
+}
+function newSkill() { S.skillSel = null; $("sk-name").value = ""; $("sk-content").value = ""; $("sk-hint").textContent = "新建技能：填名称与内容后保存"; renderSkillList(); }
+async function saveSkill() {
+  const name = $("sk-name").value.trim();
+  if (!name) { $("sk-hint").textContent = "请填技能名称"; return; }
+  const d = await (await fetch("/api/skill/save", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, content: $("sk-content").value }) })).json();
+  if (d.ok) { $("sk-hint").style.color = "var(--acc-d)"; $("sk-hint").textContent = "✅ 已保存"; S.skillSel = d.name; await loadSkillsList(); }
+  else { $("sk-hint").style.color = "var(--warn)"; $("sk-hint").textContent = "保存失败：" + (d.error || ""); }
+}
+async function loadSkillsList() { try { const d = await (await fetch("/api/skills")).json(); S.skills = d.skills || []; } catch { /* */ } renderSkillList(); }
+async function deleteSkill() {
+  const name = $("sk-name").value.trim();
+  if (!name || !(S.skills || []).includes(name)) { $("sk-hint").textContent = "该技能尚未保存"; return; }
+  if (!confirm(`删除技能「${name}」？`)) return;
+  await fetch("/api/skill/delete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) });
+  newSkill(); await loadSkillsList();
+}
+
+// ---------- 分区：题材设置 ----------
+async function loadGenresSection() {
+  try { const d = await (await fetch("/api/genres")).json(); S.genres = d.genres || []; }
+  catch { S.genres = []; }
+  $("gn-hint").textContent = ""; renderGenreRows();
+}
+function renderGenreRows() {
+  $("gn-rows").innerHTML = (S.genres || []).map((g, i) => `
+    <tr>
+      <td><input type="text" value="${esc(g.id)}" oninput="S.genres[${i}].id=this.value" /></td>
+      <td><input type="text" value="${esc(g.label)}" oninput="S.genres[${i}].label=this.value" /></td>
+      <td style="text-align:center"><input type="checkbox" ${g.panel ? "checked" : ""} onchange="S.genres[${i}].panel=this.checked" style="width:auto" /></td>
+      <td style="text-align:center"><a class="del" style="color:#c0392b;cursor:pointer" onclick="delGenre(${i})">删除</a></td>
+    </tr>`).join("");
+}
+function addGenre() { S.genres = S.genres || []; S.genres.push({ id: "", label: "", panel: false }); renderGenreRows(); }
+function delGenre(i) { S.genres.splice(i, 1); renderGenreRows(); }
+async function saveGenres() {
+  const genres = (S.genres || []).filter((g) => (g.id || "").trim());
+  if (!genres.length) { $("gn-hint").textContent = "至少保留一个题材"; return; }
+  const d = await (await fetch("/api/genres", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ genres }) })).json();
+  const el = $("gn-hint");
+  if (d.ok) { el.style.color = "var(--acc-d)"; el.textContent = "✅ 已保存"; S.genres = d.genres; renderGenreRows(); }
+  else { el.style.color = "var(--warn)"; el.textContent = "保存失败：" + (d.error || ""); }
+}
+
+// ---------- 分区：自动写作配置 ----------
+async function loadWritingSection() {
+  try {
+    const d = await (await fetch("/api/writing-config")).json();
+    const c = d.config || {};
+    $("wr-target").value = c.targetChapters ?? 200;
+    $("wr-words").value = c.chapterWordCount ?? 3000;
+    $("wr-oaudit").value = c.outlineAuditMaxRounds ?? 2;
+    $("wr-review").value = c.autoReviewMaxRounds ?? 3;
+    $("wr-hint").textContent = "";
+  } catch { /* ignore */ }
+}
+async function saveWritingConfig() {
+  const config = {
+    targetChapters: Number($("wr-target").value),
+    chapterWordCount: Number($("wr-words").value),
+    outlineAuditMaxRounds: Number($("wr-oaudit").value),
+    autoReviewMaxRounds: Number($("wr-review").value),
+  };
+  const d = await (await fetch("/api/writing-config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ config }) })).json();
+  const el = $("wr-hint");
+  if (d.ok) { el.style.color = "var(--acc-d)"; el.textContent = "✅ 已保存"; }
+  else { el.style.color = "var(--warn)"; el.textContent = "保存失败"; }
 }
 async function resumeBook(idEnc) {
   const bookId = decodeURIComponent(idEnc);
@@ -436,16 +538,16 @@ async function saveChapterText() {
 }
 
 // ---------- 模型配置 ----------
-async function openModelConfig() {
+function openModelConfig() { openHub("stages"); }   // 兼容旧入口
+async function loadStagesSection() {
   const r = await fetch("/api/model-config");
   const d = await r.json();
   $("model-rows").innerHTML = d.stages.map((s) => {
-    const opts = d.models.map((m) => `<option value="${m.id}" ${d.config[s.key] === m.id ? "selected" : ""}>${m.label}</option>`).join("");
+    const opts = d.models.map((m) => `<option value="${m.id}" ${d.config[s.key] === m.id ? "selected" : ""}>${esc(m.label)}</option>`).join("");
     return `<label style="display:flex;align-items:center;gap:12px;margin:8px 0">
       <span style="flex:0 0 130px;color:var(--ink)">${s.label}</span>
       <select data-stage="${s.key}" style="flex:1">${opts}</select></label>`;
   }).join("");
-  openModal("m-model");
 }
 async function saveModelConfig() {
   const config = {};
@@ -453,14 +555,28 @@ async function saveModelConfig() {
   const r = await fetch("/api/model-config", {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ config }),
   });
-  if ((await r.json()).ok) { closeModal("m-model"); }
-  else alert("保存失败");
+  const el = $("stage-hint");
+  if ((await r.json()).ok) { el.style.color = "var(--acc-d)"; el.textContent = "✅ 已保存"; }
+  else { el.style.color = "var(--warn)"; el.textContent = "保存失败"; }
 }
 
 // ---------- 首页 → 初始设定 ----------
-function openSettings(kind) {
+async function openSettings(kind) {
   S.kind = kind;
   $("settings-title").textContent = (kind === "longform" ? "长篇小说" : "剧本创作") + " · 初始设定";
+  // 题材下拉与默认章数/字数来自「题材设置」「自动写作配置」
+  try {
+    const [g, w] = await Promise.all([
+      (await fetch("/api/genres")).json(),
+      (await fetch("/api/writing-config")).json(),
+    ]);
+    if (Array.isArray(g.genres) && g.genres.length) {
+      $("f-genre").innerHTML = g.genres.map((x) => `<option value="${esc(x.id)}">${esc(x.label)}</option>`).join("");
+    }
+    const c = w.config || {};
+    if (c.targetChapters) $("f-target").value = c.targetChapters;
+    if (c.chapterWordCount) $("f-words").value = c.chapterWordCount;
+  } catch { /* 用页面默认 */ }
   openModal("m-settings");
 }
 

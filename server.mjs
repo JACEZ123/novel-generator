@@ -121,6 +121,54 @@ function loadModelConfig() {
   return base;
 }
 
+// ---------- 题材设置：题材列表 + 是否启用人物面板 ----------
+const GENRES_PATH = join(DATA_ROOT, "genres.json");
+const DEFAULT_GENRES = [
+  { id: "other", label: "通用/自定义", panel: false },
+  { id: "xianxia", label: "仙侠", panel: true },
+  { id: "xuanhuan", label: "玄幻", panel: true },
+  { id: "urban", label: "都市", panel: false },
+  { id: "litrpg", label: "游戏/LitRPG", panel: true },
+  { id: "progression", label: "升级流", panel: true },
+  { id: "cultivation", label: "修真", panel: true },
+  { id: "sci-fi", label: "科幻", panel: false },
+  { id: "horror", label: "恐怖", panel: false },
+  { id: "isekai", label: "异世界", panel: true },
+  { id: "romantasy", label: "浪漫奇幻", panel: false },
+  { id: "system-apocalypse", label: "系统末世", panel: true },
+  { id: "tower-climber", label: "爬塔", panel: true },
+  { id: "dungeon-core", label: "地下城核心", panel: true },
+  { id: "cozy", label: "治愈日常", panel: false },
+];
+function loadGenres() {
+  try {
+    if (existsSync(GENRES_PATH)) {
+      const a = JSON.parse(readFileSync(GENRES_PATH, "utf8"));
+      if (Array.isArray(a) && a.length) return a.filter((g) => g && g.id).map((g) => ({ id: String(g.id), label: String(g.label || g.id), panel: !!g.panel }));
+    }
+  } catch { /* ignore */ }
+  return DEFAULT_GENRES;
+}
+function panelGenreSet() { return new Set(loadGenres().filter((g) => g.panel).map((g) => g.id)); }
+
+// ---------- 自动写作配置：全局默认与运行时轮数 ----------
+const WRITING_CFG_PATH = join(DATA_ROOT, "writing-config.json");
+const DEFAULT_WRITING = {
+  targetChapters: 200,        // 建书默认目标章数
+  chapterWordCount: 3000,     // 建书默认每章字数
+  outlineAuditMaxRounds: 2,   // 章纲结构审计最多修订轮数
+  autoReviewMaxRounds: 3,     // 正文自动审改最多轮数
+};
+function loadWritingConfig() {
+  let c = { ...DEFAULT_WRITING };
+  try { if (existsSync(WRITING_CFG_PATH)) c = { ...c, ...JSON.parse(readFileSync(WRITING_CFG_PATH, "utf8")) }; } catch { /* ignore */ }
+  return c;
+}
+
+// ---------- 用户技能：data/skills/*.md（可查看/编辑的补充指令片段）----------
+const SKILLS_DIR = join(DATA_ROOT, "skills");
+const safeSkillName = (n) => String(n || "").replace(/[^\w.\- 一-鿿]/g, "").replace(/\.\.+/g, "").trim();
+
 // 引擎阶段（agent）名 → 中文友好名（用于进度反馈）
 function friendlyAgent(agent) {
   return ({
@@ -203,9 +251,8 @@ function defaultPanel(book) {
     updatedAtChapter: 0,
   };
 }
-// 该书是否启用人物面板（游戏/网游类题材）
-const PANEL_GENRES = new Set(["litrpg", "progression", "cultivation", "xianxia", "xuanhuan", "system-apocalypse", "tower-climber", "dungeon-core"]);
-function panelEnabled(book) { return !!book && (PANEL_GENRES.has(book.genre) || existsSync(PANEL_PATH(book.id))); }
+// 该书是否启用人物面板（按题材设置里的 panel 标志，或已存在面板文件）
+function panelEnabled(book) { return !!book && (panelGenreSet().has(book.genre) || existsSync(PANEL_PATH(book.id))); }
 async function readPanel(bookId, book) {
   try { return JSON.parse(await readFile(PANEL_PATH(bookId), "utf8")); } catch { return defaultPanel(book || { id: bookId }); }
 }
@@ -659,7 +706,7 @@ const server = createServer(async (req, res) => {
       sseInit(res);
       let aborted = false;
       req.on("close", () => { aborted = true; });
-      const MAX = 2;
+      const MAX = loadWritingConfig().outlineAuditMaxRounds || 2;
       try {
         // 1) 若该组还没有章纲，先生成
         const existing = await loadChapterOutlines(bookId);
@@ -799,7 +846,7 @@ const server = createServer(async (req, res) => {
       sseInit(res);
       let aborted = false;
       req.on("close", () => { aborted = true; });
-      const MAX_ROUNDS = 3;
+      const MAX_ROUNDS = loadWritingConfig().autoReviewMaxRounds || 3;
       const packAudit = (a) => ({ passed: !!a.passed, score: a.score ?? null, summary: a.summary ?? "", issues: (a.issues || []).map((i) => (typeof i === "string" ? { severity: "问题", description: i } : { severity: i.severity, description: i.description })) });
       try {
         // 第 1 轮审计
@@ -963,6 +1010,71 @@ const server = createServer(async (req, res) => {
     // ---- 是否已就绪（前端进入时判断是否需要先去「设置」配置密钥）----
     if (req.method === "GET" && path === "/api/ready") {
       return sendJson(res, 200, { ready: hasApiKey() });
+    }
+
+    // ---- 题材设置：读 ----
+    if (req.method === "GET" && path === "/api/genres") {
+      return sendJson(res, 200, { genres: loadGenres() });
+    }
+    // ---- 题材设置：存 ----
+    if (req.method === "POST" && path === "/api/genres") {
+      const { genres } = await body(req);
+      if (!Array.isArray(genres) || !genres.length) return sendJson(res, 400, { error: "题材列表不能为空" });
+      const clean = genres.filter((g) => g && g.id).map((g) => ({ id: String(g.id).trim(), label: String(g.label || g.id).trim(), panel: !!g.panel }));
+      await mkdir(DATA_ROOT, { recursive: true }).catch(() => {});
+      await writeFile(GENRES_PATH, JSON.stringify(clean, null, 2), "utf8");
+      return sendJson(res, 200, { ok: true, genres: clean });
+    }
+
+    // ---- 自动写作配置：读 ----
+    if (req.method === "GET" && path === "/api/writing-config") {
+      return sendJson(res, 200, { config: loadWritingConfig() });
+    }
+    // ---- 自动写作配置：存 ----
+    if (req.method === "POST" && path === "/api/writing-config") {
+      const { config } = await body(req);
+      const cur = loadWritingConfig();
+      const next = { ...cur };
+      const num = (v, min, max, d) => { const n = Number(v); return Number.isFinite(n) ? Math.min(max, Math.max(min, Math.round(n))) : d; };
+      if (config?.targetChapters != null) next.targetChapters = num(config.targetChapters, 1, 100000, cur.targetChapters);
+      if (config?.chapterWordCount != null) next.chapterWordCount = num(config.chapterWordCount, 300, 20000, cur.chapterWordCount);
+      if (config?.outlineAuditMaxRounds != null) next.outlineAuditMaxRounds = num(config.outlineAuditMaxRounds, 0, 5, cur.outlineAuditMaxRounds);
+      if (config?.autoReviewMaxRounds != null) next.autoReviewMaxRounds = num(config.autoReviewMaxRounds, 1, 8, cur.autoReviewMaxRounds);
+      await mkdir(DATA_ROOT, { recursive: true }).catch(() => {});
+      await writeFile(WRITING_CFG_PATH, JSON.stringify(next, null, 2), "utf8");
+      return sendJson(res, 200, { ok: true, config: next });
+    }
+
+    // ---- 用户技能：列出 ----
+    if (req.method === "GET" && path === "/api/skills") {
+      let files = [];
+      try { files = (await readdir(SKILLS_DIR)).filter((f) => f.endsWith(".md")).sort(); } catch { /* 目录不存在 */ }
+      return sendJson(res, 200, { skills: files.map((f) => f.replace(/\.md$/, "")) });
+    }
+    // ---- 用户技能：读单个 ----
+    if (req.method === "GET" && path === "/api/skill") {
+      const name = safeSkillName(url.searchParams.get("name"));
+      if (!name) return sendJson(res, 400, { error: "缺少名称" });
+      let content = "";
+      try { content = await readFile(join(SKILLS_DIR, `${name}.md`), "utf8"); } catch { /* 新建 */ }
+      return sendJson(res, 200, { name, content });
+    }
+    // ---- 用户技能：保存 ----
+    if (req.method === "POST" && path === "/api/skill/save") {
+      const { name, content } = await body(req);
+      const n = safeSkillName(name);
+      if (!n) return sendJson(res, 400, { error: "名称非法" });
+      await mkdir(SKILLS_DIR, { recursive: true }).catch(() => {});
+      await writeFile(join(SKILLS_DIR, `${n}.md`), content ?? "", "utf8");
+      return sendJson(res, 200, { ok: true, name: n });
+    }
+    // ---- 用户技能：删除 ----
+    if (req.method === "POST" && path === "/api/skill/delete") {
+      const { name } = await body(req);
+      const n = safeSkillName(name);
+      if (!n) return sendJson(res, 400, { error: "名称非法" });
+      await rm(join(SKILLS_DIR, `${n}.md`), { force: true }).catch(() => {});
+      return sendJson(res, 200, { ok: true });
     }
 
     // ---- 保存编辑后的设定分节（世界观/卷纲/伏笔/规则/文风）----

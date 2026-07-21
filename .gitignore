@@ -3,6 +3,9 @@ node_modules/
 
 # 用户密钥与运行时配置（绝不提交）
 data/config.json
+data/genres.json
+data/writing-config.json
+data/skills/
 .env
 
 # 生成的作品数据与运行时状态

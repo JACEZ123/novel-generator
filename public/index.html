@@ -152,21 +152,49 @@
   .mdl-tag{font-size:11px;padding:2px 9px;border-radius:6px;background:#eef2f0;color:var(--acc-d)}
   .mdl-tag.blue{background:#e7efff;color:#2b6cb0}
   .mdl-empty{font-size:13px;color:var(--muted);padding:14px;text-align:center;border:1px dashed var(--line);border-radius:10px}
+  /* 设置中心（Hub）：左菜单 + 右内容 */
+  #m-hub .modal{max-width:960px;width:100%;padding:0;overflow:hidden}
+  .hub-head{display:flex;align-items:center;padding:16px 22px;border-bottom:1px solid var(--line)}
+  .hub-head h2{margin:0;font-family:var(--serif)}
+  .hub-head .hub-x{margin-left:auto;cursor:pointer;color:var(--muted);font-size:20px;line-height:1}
+  .hub-body{display:flex;min-height:520px;max-height:78vh}
+  .hub-nav{flex:0 0 200px;border-right:1px solid var(--line);padding:12px 8px;overflow:auto;background:#fafbfb}
+  .hub-navi{padding:10px 12px;border-radius:9px;cursor:pointer;font-size:14px;color:var(--ink);display:flex;align-items:center;gap:8px;margin:2px 0}
+  .hub-navi:hover{background:#f0f4f3}
+  .hub-navi.sel{background:#e7f2f0;color:var(--acc-d);font-weight:700}
+  .hub-content{flex:1;min-width:0;padding:20px 24px;overflow:auto}
+  .hub-content h3.sec-t{margin:0 0 4px;font-family:var(--serif);font-size:18px}
+  .hub-content .sec-d{color:var(--muted);font-size:13px;margin:0 0 14px}
+  /* Skills 两栏 */
+  .sk-grid{display:grid;grid-template-columns:230px 1fr;gap:16px;align-items:start}
+  .sk-list{border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  .sk-list .sk-item{padding:9px 12px;font-size:13px;cursor:pointer;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:6px}
+  .sk-list .sk-item:hover{background:#f3f7f6}
+  .sk-list .sk-item.sel{background:#e7f2f0;color:var(--acc-d);font-weight:700}
+  .sk-empty{padding:14px;color:var(--muted);font-size:13px;text-align:center}
+  /* 题材表 */
+  table.gn-tbl{width:100%;border-collapse:collapse;font-size:13px}
+  table.gn-tbl th,table.gn-tbl td{border:1px solid var(--line);padding:6px 9px;text-align:left}
+  table.gn-tbl th{background:#eef2f0;color:var(--acc-d)}
+  table.gn-tbl input[type=text]{padding:5px 8px}
+  @media(max-width:760px){.hub-nav{flex-basis:140px}.sk-grid{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
 <header>
   <span class="logo">jace 开源小说生成器</span>
   <span class="sub">AI 自动写长篇 · 大纲→章纲→正文→审计 全流程</span>
-  <button style="margin-left:auto" onclick="openSettingsConfig()">🔑 设置</button>
+  <button style="margin-left:auto" onclick="openHub('models')">⚙ 设置</button>
   <button onclick="openLogs()">🗂 输入记录</button>
-  <button onclick="openModelConfig()">⚙ 模型配置</button>
 </header>
 <div class="layout">
 <aside class="sidebar">
   <div class="side-head">我的作品</div>
   <button class="side-new" onclick="goHome()">＋ 新建创作</button>
   <div id="book-list"></div>
+  <div style="border-top:1px solid var(--line);margin-top:12px;padding-top:10px">
+    <div class="book-item" onclick="openHub('models')" style="display:flex;align-items:center;gap:8px"><span>⚙</span><span class="bk-title" style="margin:0">设置</span></div>
+  </div>
 </aside>
 <main>
   <!-- 首页 -->
@@ -333,41 +361,119 @@
   <div class="toolbar"><button onclick="closeModal('m-logs')">关闭</button></div>
 </div></div>
 
-<!-- 设置弹框：模型服务（密钥 / 请求地址 / 模型列表） -->
-<div class="scrim" id="m-config"><div class="modal" style="max-width:720px">
-  <h2>设置 · 模型服务</h2>
-  <p style="color:var(--muted);font-size:13px;margin:.3em 0 2px">密钥只保存在本机 <code>data/config.json</code>（已被 .gitignore 忽略），不会上传或随仓库提交。也可用环境变量 <code>NOVEL_API_KEY</code> / <code>OPENAI_API_KEY</code> 注入。</p>
+<!-- 设置中心：左菜单 + 右内容 -->
+<div class="scrim" id="m-hub"><div class="modal">
+  <div class="hub-head"><h2>设置</h2><span class="hub-x" onclick="closeModal('m-hub')">✕</span></div>
+  <div class="hub-body">
+    <div class="hub-nav">
+      <div class="hub-navi sel" data-sec="models" onclick="hubNav('models')">🖥 模型服务</div>
+      <div class="hub-navi" data-sec="stages" onclick="hubNav('stages')">🧩 模型配置</div>
+      <div class="hub-navi" data-sec="skills" onclick="hubNav('skills')">🌀 Skills 技能管理</div>
+      <div class="hub-navi" data-sec="genres" onclick="hubNav('genres')">🏷 题材设置</div>
+      <div class="hub-navi" data-sec="writing" onclick="hubNav('writing')">✍ 自动写作配置</div>
+    </div>
+    <div class="hub-content">
 
-  <label>API 密钥 <span style="color:#c0392b">*必填</span> <span id="cfg-key-state" style="color:var(--muted);font-weight:400"></span></label>
-  <div style="position:relative">
-    <input id="cfg-key" type="password" placeholder="留空则不修改已保存的密钥" autocomplete="off" style="padding-right:38px" />
-    <span onclick="toggleKeyEye()" title="显示/隐藏" style="position:absolute;right:10px;top:9px;cursor:pointer;color:var(--muted);user-select:none">👁</span>
+      <!-- 模型服务 -->
+      <div id="hub-models" class="hub-sec">
+        <h3 class="sec-t">模型服务</h3>
+        <p class="sec-d">密钥只保存在本机 <code>data/config.json</code>（已 .gitignore 忽略），不会上传或随仓库提交。也可用环境变量 <code>NOVEL_API_KEY</code> / <code>OPENAI_API_KEY</code> 注入。</p>
+        <label>API 密钥 <span style="color:#c0392b">*必填</span> <span id="cfg-key-state" style="color:var(--muted);font-weight:400"></span></label>
+        <div style="position:relative">
+          <input id="cfg-key" type="password" placeholder="留空则不修改已保存的密钥" autocomplete="off" style="padding-right:38px" />
+          <span onclick="toggleKeyEye()" title="显示/隐藏" style="position:absolute;right:10px;top:9px;cursor:pointer;color:var(--muted);user-select:none">👁</span>
+        </div>
+        <label>请求地址（Base URL） <span style="color:#c0392b">*必填</span></label>
+        <input id="cfg-baseurl" placeholder="https://api.deepseek.com" />
+        <div style="font-size:12px;color:var(--muted);margin-top:4px">示例：https://api.deepseek.com（任意 OpenAI 兼容接口均可）</div>
+        <div style="display:flex;align-items:center;margin:16px 0 6px">
+          <span style="font-size:14px;color:var(--acc-d);font-weight:700">模型设置</span>
+          <button style="margin-left:auto" onclick="openModelEdit(null)">＋ 手动添加</button>
+        </div>
+        <div id="cfg-model-list"></div>
+        <div class="row" style="margin-top:14px">
+          <div><label>快模型（正文/审查默认）</label><select id="cfg-fast"></select></div>
+          <div><label>强模型（大纲/审计/修订默认）</label><select id="cfg-strong"></select></div>
+          <div><label>温度</label><input id="cfg-temp" type="number" step="0.1" value="0.7" /></div>
+        </div>
+        <div class="toolbar" style="margin-top:16px">
+          <button class="primary" onclick="saveConfig()">保存模型服务</button>
+          <span class="hint" id="cfg-hint" style="margin:0"></span>
+        </div>
+      </div>
+
+      <!-- 分阶段模型配置 -->
+      <div id="hub-stages" class="hub-sec hidden">
+        <h3 class="sec-t">模型配置</h3>
+        <p class="sec-d">不同写作阶段可用不同模型：大纲/审计/修订用更强的模型（质量更高），正文/审查用更快的模型（更省更快）。可用模型列表在「模型服务」里维护。</p>
+        <div id="model-rows"></div>
+        <div class="toolbar" style="margin-top:14px">
+          <button class="primary" onclick="saveModelConfig()">保存分阶段配置</button>
+          <span class="hint" id="stage-hint" style="margin:0"></span>
+        </div>
+      </div>
+
+      <!-- Skills 技能管理 -->
+      <div id="hub-skills" class="hub-sec hidden">
+        <h3 class="sec-t">Skills 技能管理</h3>
+        <p class="sec-d">在这里维护你自己的技能片段（<code>data/skills/*.md</code>）：可存放固定写作规范、口头禅清单、禁用词、世界观补充等，供你复制进设定或写作意见时复用。<br><span style="color:var(--warn)">注：核心写作/审计的内置提示词由写作引擎（依赖）提供，不在此处，也不随本仓库分发。</span></p>
+        <div class="sk-grid">
+          <div>
+            <input id="sk-search" placeholder="搜索技能名…" oninput="renderSkillList()" style="margin-bottom:8px" />
+            <button style="width:100%;margin-bottom:8px" onclick="newSkill()">＋ 新建技能</button>
+            <div class="sk-list" id="sk-list"></div>
+          </div>
+          <div>
+            <label>技能名称</label>
+            <input id="sk-name" placeholder="例如：文风规范" />
+            <label>内容（Markdown）</label>
+            <textarea id="sk-content" style="min-height:280px;font-family:var(--serif)" placeholder="在此编写技能内容…"></textarea>
+            <div class="toolbar" style="margin-top:10px">
+              <button class="primary" onclick="saveSkill()">保存</button>
+              <button class="danger" onclick="deleteSkill()">删除</button>
+              <span class="hint" id="sk-hint" style="margin:0"></span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 题材设置 -->
+      <div id="hub-genres" class="hub-sec hidden">
+        <h3 class="sec-t">题材设置</h3>
+        <p class="sec-d">管理建书时可选的题材，以及每个题材是否默认启用「人物属性面板」（游戏/系统流等养成向题材建议开启）。</p>
+        <table class="gn-tbl"><thead><tr><th style="width:34%">题材标识</th><th>显示名称</th><th style="width:90px">人物面板</th><th style="width:56px"></th></tr></thead>
+          <tbody id="gn-rows"></tbody>
+        </table>
+        <div class="toolbar" style="margin-top:12px">
+          <button onclick="addGenre()">＋ 添加题材</button>
+          <button class="primary" onclick="saveGenres()">保存题材</button>
+          <span class="hint" id="gn-hint" style="margin:0"></span>
+        </div>
+      </div>
+
+      <!-- 自动写作配置 -->
+      <div id="hub-writing" class="hub-sec hidden">
+        <h3 class="sec-t">自动写作配置</h3>
+        <p class="sec-d">建书默认值与自动流程的轮数上限（对之后新建的书与后续写作生效）。</p>
+        <div class="row">
+          <div><label>默认目标章数</label><input id="wr-target" type="number" min="1" /></div>
+          <div><label>默认每章字数</label><input id="wr-words" type="number" min="300" /></div>
+        </div>
+        <div class="row" style="margin-top:6px">
+          <div><label>章纲结构审计最多修订轮数（0-5）</label><input id="wr-oaudit" type="number" min="0" max="5" /></div>
+          <div><label>正文自动审改最多轮数（1-8）</label><input id="wr-review" type="number" min="1" max="8" /></div>
+        </div>
+        <div class="toolbar" style="margin-top:14px">
+          <button class="primary" onclick="saveWritingConfig()">保存自动写作配置</button>
+          <span class="hint" id="wr-hint" style="margin:0"></span>
+        </div>
+      </div>
+
+    </div>
   </div>
-
-  <label>请求地址（Base URL） <span style="color:#c0392b">*必填</span></label>
-  <input id="cfg-baseurl" placeholder="https://api.deepseek.com" />
-  <div style="font-size:12px;color:var(--muted);margin-top:4px">示例：https://api.deepseek.com（任意 OpenAI 兼容接口均可）</div>
-
-  <div style="display:flex;align-items:center;margin:16px 0 6px">
-    <span style="font-size:14px;color:var(--acc-d);font-weight:700">模型设置</span>
-    <button style="margin-left:auto" onclick="openModelEdit(null)">＋ 手动添加</button>
-  </div>
-  <div id="cfg-model-list"></div>
-
-  <div class="row" style="margin-top:14px">
-    <div><label>快模型（正文/审查默认）</label><select id="cfg-fast"></select></div>
-    <div><label>强模型（大纲/审计/修订默认）</label><select id="cfg-strong"></select></div>
-    <div><label>温度</label><input id="cfg-temp" type="number" step="0.1" value="0.7" /></div>
-  </div>
-
-  <div class="toolbar" style="margin-top:16px">
-    <button onclick="closeModal('m-config')">取消</button>
-    <button class="primary" onclick="saveConfig()">保存设置</button>
-  </div>
-  <div class="hint" id="cfg-hint"></div>
 </div></div>
 
-<!-- 编辑模型弹框 -->
+<!-- 编辑模型弹框（浮于设置中心之上） -->
 <div class="scrim" id="m-model-edit"><div class="modal" style="max-width:520px">
   <h2 id="me-title">编辑模型</h2>
   <label>显示名称</label>
@@ -384,17 +490,6 @@
   <div class="toolbar" style="margin-top:18px">
     <button onclick="closeModal('m-model-edit')">取消</button>
     <button class="primary" onclick="saveModelEdit()">确认</button>
-  </div>
-</div></div>
-
-<!-- 模型配置弹框 -->
-<div class="scrim" id="m-model"><div class="modal">
-  <h2>模型配置 <span class="badge">分阶段选择模型</span></h2>
-  <p style="color:var(--muted);font-size:13px;margin:.3em 0 0">不同阶段可用不同模型：大纲/审计/修订用更强的模型（质量更高），正文/审查用更快的模型（更省更快）。可用模型列表在「🔑 设置」里维护。</p>
-  <div id="model-rows" style="margin-top:10px"></div>
-  <div class="toolbar">
-    <button onclick="closeModal('m-model')">取消</button>
-    <button class="primary" onclick="saveModelConfig()">保存配置</button>
   </div>
 </div></div>
 
